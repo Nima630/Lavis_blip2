@@ -1,0 +1,65 @@
+Blip2Qformer(
+  (rgb_input_proj): Conv2d(2048, 256, kernel_size=(1, 1), stride=(1, 1))
+  (lidar_input_proj): Conv2d(256, 256, kernel_size=(1, 1), stride=(1, 1))
+  (rgb_layernorm): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+  (lidar_layernorm): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+  (Qformer): MiniQFormer(
+    (blocks): ModuleList(
+      (0-3): 4 x TransformerBlock(
+        (ln1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (self_attn): MultiheadAttention(
+          (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)
+        )
+        (cross_attn): CrossAttention(
+          (to_q): Linear(in_features=256, out_features=256, bias=False)
+          (to_k): Linear(in_features=256, out_features=256, bias=False)
+          (to_v): Linear(in_features=256, out_features=256, bias=False)
+          (to_out): Sequential(
+            (0): Linear(in_features=256, out_features=256, bias=True)
+            (1): Dropout(p=0.1, inplace=False)
+          )
+        )
+        (ln2): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (ln3): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (mlp): Sequential(
+          (0): Linear(in_features=256, out_features=1024, bias=True)
+          (1): GELU(approximate='none')
+          (2): Dropout(p=0.1, inplace=False)
+          (3): Linear(in_features=1024, out_features=256, bias=True)
+          (4): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (Qformer_lidar): MiniQFormer(
+    (blocks): ModuleList(
+      (0-3): 4 x TransformerBlock(
+        (ln1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (self_attn): MultiheadAttention(
+          (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)
+        )
+        (cross_attn): CrossAttention(
+          (to_q): Linear(in_features=256, out_features=256, bias=False)
+          (to_k): Linear(in_features=256, out_features=256, bias=False)
+          (to_v): Linear(in_features=256, out_features=256, bias=False)
+          (to_out): Sequential(
+            (0): Linear(in_features=256, out_features=256, bias=True)
+            (1): Dropout(p=0.1, inplace=False)
+          )
+        )
+        (ln2): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (ln3): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (mlp): Sequential(
+          (0): Linear(in_features=256, out_features=1024, bias=True)
+          (1): GELU(approximate='none')
+          (2): Dropout(p=0.1, inplace=False)
+          (3): Linear(in_features=1024, out_features=256, bias=True)
+          (4): Dropout(p=0.1, inplace=False)
+        )
+      )
+    )
+  )
+  (vision_proj): Linear(in_features=256, out_features=256, bias=True)
+  (lidar_proj): Linear(in_features=256, out_features=256, bias=True)
+  (dropout): Dropout(p=0.1, inplace=False)
+)

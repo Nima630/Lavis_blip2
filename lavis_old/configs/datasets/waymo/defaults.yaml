@@ -1,0 +1,88 @@
+datasets:
+  waymo:
+    data_type: ["camera", "lidar"]
+    build_info:
+      annotations:
+        camera:
+          train:
+            storage: lavis/my_datasets/waymo/waymo_camera_annotations.json
+        lidar:
+          train:
+            storage: lavis/my_datasets/waymo/waymo_lidar_annotations.json
+      camera:
+        storage: lavis/my_datasets/waymo/train/tiny_camera_image
+      lidar:
+        storage: lavis/my_datasets/waymo/train/tiny_lidar
+
+    vis_processor:
+      train:
+        name: blip2_image_train
+        image_size: 224
+
+    text_processor:
+      train:
+        name: blip_caption
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# datasets:
+#   waymo:
+#     data_type: ["camera"]
+#     build_info:
+#       annotations:
+#         camera:
+#           train:
+#             storage: lavis/my_datasets/waymo/waymo_camera_annotations.json
+#       camera:
+#         storage: lavis/my_datasets/waymo/train/camera_image
+#     vis_processor:
+#       train:
+#         name: blip2_image_train
+#         image_size: 224
+#     text_processor:
+#       train:
+#         name: blip_caption
+
+
+
+
+
+
+
+
+
+
+#       annotations:
+#         camera:
+#           train:
+#             storage: lavis/my_datasets/waymo/waymo_camera_annotations.json
+#         lidar:
+#           train:
+#             storage: lavis/my_datasets/waymo/waymo_lidar_annotations.json
+
+#       camera:
+#         storage: lavis/my_datasets/waymo/training/camera_image
+
+#       lidar:
+#         storage: lavis/my_datasets/waymo/training/lidar
