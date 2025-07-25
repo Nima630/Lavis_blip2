@@ -187,9 +187,9 @@ datasets:
 
 
 run:
-  # retrieval_eval: false 
   retrieval_eval: true
-  use_shuffled_validation: false
+  use_shuffled_validation: true
+  # use_batchwise_metrics: false
   task: nuscenes_captioning  # <- custom task if you register it
   lr_sched: "linear_warmup_cosine_lr" #   linear_warmup_step_lr
   # lr_decay_rate: 0.9 

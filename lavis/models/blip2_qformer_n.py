@@ -565,7 +565,9 @@ class Blip2Qformer(Blip2Base):
 
 
     def forward(self, samples, is_train=True):
-        shuffle_prob = 0 #.5
+        print("forward   ")
+        
+        shuffle_prob = 0.5
         # print("start of Qformer ------------------------------------------------------------")
         image = samples["image"]
         lidar = samples["lidar"]
@@ -756,6 +758,192 @@ class Blip2Qformer(Blip2Base):
 
 
 
+    def forward_features(self, samples, is_train=True):
+        print("forward_features")
+        image = samples["image"]
+        lidar = samples["lidar"]
+        bs = image.size(0)
+
+        # === RGB branch ===
+        rgb_proj = self.rgb_input_proj(image)
+        rgb_embeds = rgb_proj.flatten(2).transpose(1, 2)
+        rgb_embeds = self.rgb_layernorm(rgb_embeds)
+        rgb_atts = torch.ones(rgb_embeds.size()[:-1], dtype=torch.long).to(image.device)
+        query_tokens = self.query_tokens.expand(bs, -1, -1)
+        rgb_output = self.Qformer(
+            query_embeds=query_tokens,
+            encoder_hidden_states=rgb_embeds,
+            encoder_attention_mask=rgb_atts,
+            return_dict=True,
+        )
+        rgb_feats = F.normalize(self.vision_proj(rgb_output.last_hidden_state), dim=-1)
+
+        # === LiDAR branch ===
+        lidar_feat = lidar.squeeze(1)
+        lidar_proj = self.lidar_input_proj(lidar_feat)
+        lidar_embeds = lidar_proj.flatten(2).transpose(1, 2)
+        lidar_embeds = self.lidar_layernorm(lidar_embeds)
+        lidar_atts = torch.ones(lidar_embeds.size()[:-1], dtype=torch.long).to(lidar.device)
+        query_tokens_lidar = self.query_tokens_lidar.expand(bs, -1, -1)
+        lidar_output = self.Qformer_lidar(
+            query_embeds=query_tokens_lidar,
+            encoder_hidden_states=lidar_embeds,
+            encoder_attention_mask=lidar_atts,
+            return_dict=True,
+        )
+        lidar_feats = F.normalize(self.lidar_proj(lidar_output.last_hidden_state), dim=-1)
+
+        # === Pool and similarity ===
+        rgb_avg = rgb_feats.mean(dim=1)
+        lidar_avg = lidar_feats.mean(dim=1)
+        print("torch.exp(self.log_temp)")
+        print(torch.exp(self.log_temp))
+        sim_matrix = (rgb_avg @ lidar_avg.T) * torch.exp(self.log_temp)
+        targets = torch.arange(bs, device=image.device)
+
+        # === Contrastive loss ===
+        loss_contrastive = (
+            F.cross_entropy(sim_matrix, targets) +
+            F.cross_entropy(sim_matrix.T, targets)) / 2
+
+        print(f"\n[DEBUG] CE(sim_matrix): {F.cross_entropy(sim_matrix, targets)}")
+        print(f"\n[DEBUG] CE(sim_matrix.T): {F.cross_entropy(sim_matrix.T, targets)}")
+
+
+        print("sim_matrix")
+        # print(sim_matrix)
+        # print(f"[DEBUG] sim_matrix sample row (0): {sim_matrix[5][:8]}")
+
+        vals, idx = sim_matrix.max(dim=1)
+        print("idx", idx)
+        # print(f"[DEBUG] ffffffffffffffff sim_matrix sample row (0): {sim_matrix[5][:8]}")
+        
+        # === Diversity loss ===
+        if bs > 1:
+            loss_diversity = (self._diversity_loss(rgb_avg) + self._diversity_loss(lidar_avg)) / 2
+        else:
+            loss_diversity = torch.tensor(0.0, device=rgb_avg.device)
+        print("loss_contrastive = ",loss_contrastive)
+        print("loss_diversity = ",loss_diversity)
+        # === Diagnostics ===
+        prob_rgb2lidar = F.softmax(sim_matrix, dim=1)
+        prob_lidar2rgb = F.softmax(sim_matrix.T, dim=1)
+        acc_rgb2lidar = (prob_rgb2lidar.argmax(dim=1) == targets).float().mean()
+        acc_lidar2rgb = (prob_lidar2rgb.argmax(dim=1) == targets).float().mean()
+        rgb_feat_norm = torch.norm(rgb_feats, dim=-1).mean()
+        lidar_feat_norm = torch.norm(lidar_feats, dim=-1).mean()
+        diag_sim = sim_matrix.diag().mean()
+        off_diag_sim = sim_matrix[~torch.eye(bs, dtype=bool, device=sim_matrix.device)].mean()
+
+        # Return dictionary
+        return {
+            "rgb_feats": rgb_feats,  # [B, N, D]
+            "lidar_feats": lidar_feats,  # [B, N, D]
+            "diagnostics": {
+                "similarity": {
+                    "matrix": sim_matrix,
+                    "diag_mean": diag_sim,
+                    "off_diag_mean": off_diag_sim
+                },
+                "accuracy": (acc_rgb2lidar + acc_lidar2rgb) / 2,
+                "feature_norms": (rgb_feat_norm, lidar_feat_norm)
+            }
+        }
+
+
+    # def forward_features_shuffled(self, samples, shuffle_prob=0.5, is_train=True):
+    #     print("forward_features_shuffled")
+
+    #     """
+    #     Same as forward_features, but applies the same lidar shuffling scheme used in forward().
+    #     Useful to (a) retrieve features, (b) compute recall/MMR, and (c) verify that the
+    #     shuffling pipeline behaves as expected at eval time.
+
+    #     Returns:
+    #         dict with:
+    #         - rgb_feats, lidar_feats: [B, N, D]
+    #         - sim_matrix: [B, B] (after shuffling)
+    #         - targets: the (possibly permuted) gt indices per row
+    #         - keep_mask, perm: to inspect which samples were shuffled
+    #         - loss_contrastive: scalar tensor
+    #         - gt_indices, match_labels: for the ROC/AUC + shuffled-retrieval path
+    #         - diagnostics: assorted stats
+    #     """
+    #     image = samples["image"]
+    #     lidar = samples["lidar"]
+    #     bs = image.size(0)
+
+    #     print("\n================ forward_features_shuffled ================")
+    #     print(f"[FF_SHUF] batch size = {bs}, shuffle_prob = {shuffle_prob}, is_train = {is_train}")
+    #     print(f"[FF_SHUF] exp(log_temp) = {torch.exp(self.log_temp).item():.4f}")
+
+    #     # === RGB branch ===
+    #     rgb_proj = self.rgb_input_proj(image)
+    #     rgb_embeds = rgb_proj.flatten(2).transpose(1, 2)
+    #     rgb_embeds = self.rgb_layernorm(rgb_embeds)
+    #     rgb_atts = torch.ones(rgb_embeds.size()[:-1], dtype=torch.long, device=image.device)
+    #     query_tokens = self.query_tokens.expand(bs, -1, -1)
+
+    #     rgb_output = self.Qformer(
+    #         query_embeds=query_tokens,
+    #         encoder_hidden_states=rgb_embeds,
+    #         encoder_attention_mask=rgb_atts,
+    #         return_dict=True,
+    #     )
+    #     rgb_feats = F.normalize(self.vision_proj(rgb_output.last_hidden_state), dim=-1)
+
+    #     # === LiDAR branch ===
+    #     lidar_feat = lidar.squeeze(1)
+    #     lidar_proj = self.lidar_input_proj(lidar_feat)
+    #     lidar_embeds = lidar_proj.flatten(2).transpose(1, 2)
+    #     lidar_embeds = self.lidar_layernorm(lidar_embeds)
+    #     lidar_atts = torch.ones(lidar_embeds.size()[:-1], dtype=torch.long, device=lidar.device)
+    #     query_tokens_lidar = self.query_tokens_lidar.expand(bs, -1, -1)
+
+    #     lidar_output = self.Qformer_lidar(
+    #         query_embeds=query_tokens_lidar,
+    #         encoder_hidden_states=lidar_embeds,
+    #         encoder_attention_mask=lidar_atts,
+    #         return_dict=True,
+    #     )
+    #     lidar_feats = F.normalize(self.lidar_proj(lidar_output.last_hidden_state), dim=-1)
+
+    #     # === Pool ===
+    #     rgb_avg = rgb_feats.mean(dim=1)      # [B, D]
+    #     lidar_avg = lidar_feats.mean(dim=1)  # [B, D]
+
+    #     # === Shuffle just like in forward() ===
+    #     device = image.device
+    #     if is_train and shuffle_prob > 0:
+    #         perm = torch.randperm(bs, device=device)
+    #         keep_mask = torch.rand(bs, device=device) > shuffle_prob  # True = keep (no shuffle)
+
+    #         lidar_avg_shuffled = lidar_avg.clone()
+    #         lidar_avg_shuffled[~keep_mask] = lidar_avg[perm[~keep_mask]]
+
+    #         targets = torch.arange(bs, device=device)
+    #         targets_shuffled = targets.clone()
+    #         targets_shuffled[~keep_mask] = perm[~keep_mask]
+
+    #         num_mismatched = (~keep_mask).sum().item()
+
+    #         # === Verbose prints ===
+    #         print(f"[FF_SHUF] perm          : {perm.tolist()}")
+    #         print(f"[FF_SHUF] keep_mask     : {keep_mask.tolist()}")
+    #         print(f"[FF_SHUF] mismatched ct : {num_mismatched}/{bs}")
+    #         if num_mismatched > 0:
+    #             print("[FF_SHUF] (idx -> perm[idx]) for mismatched:")
+    #             mismatched_idx = torch.nonzero(~keep_mask, as_tuple=False).flatten()
+    #             for i in mismatched_idx.tolist():
+    #                 print(f"   {i} -> {perm[i].item()}")
+
+    #         gt_indices = targets_shuffled  # what column is considered GT for each row
+    #         match_labels = keep_mask.long()  # 1 if true match kept, 0 if mismatched
+    #     else:
+    #         perm = torch.arange(bs, device=device)
+    #         keep_mask = torch.ones(bs, dtype=torch.bool, device=device)
+    #         lidar_avg_shuffled = lidar_avg
+    #         targets_shu_
 
 
 
@@ -763,14 +951,141 @@ class Blip2Qformer(Blip2Base):
 
 
 
+    def forward_features_shuffled(self, samples, shuffle_prob=0.5, is_train=True):
+        """
+        Same as forward_features, but applies the same lidar shuffling scheme used in forward().
+        Useful to (a) retrieve features, (b) compute recall/MMR, and (c) verify that the
+        shuffling pipeline behaves as expected at eval time.
 
+        Returns:
+            dict with:
+            - rgb_feats, lidar_feats: [B, N, D]
+            - sim_matrix: [B, B] (after shuffling)
+            - targets: the (possibly permuted) gt indices per row
+            - keep_mask, perm: to inspect which samples were shuffled
+            - loss_contrastive: scalar tensor
+            - gt_indices, match_labels: for the ROC/AUC + shuffled-retrieval path
+            - diagnostics: assorted stats
+        """
+        image = samples["image"]
+        lidar = samples["lidar"]
+        bs = image.size(0)
+        shuffle_prob = 0
+        print("\n================ forward_features_shuffled ================")
+        print(f"[FF_SHUF] batch size = {bs}, shuffle_prob = {shuffle_prob}, is_train = {is_train}")
+        print(f"[FF_SHUF] exp(log_temp) = {torch.exp(self.log_temp).item():.4f}")
 
+        # === RGB branch ===
+        rgb_proj = self.rgb_input_proj(image)
+        rgb_embeds = rgb_proj.flatten(2).transpose(1, 2)
+        rgb_embeds = self.rgb_layernorm(rgb_embeds)
+        rgb_atts = torch.ones(rgb_embeds.size()[:-1], dtype=torch.long, device=image.device)
+        query_tokens = self.query_tokens.expand(bs, -1, -1)
 
+        rgb_output = self.Qformer(
+            query_embeds=query_tokens,
+            encoder_hidden_states=rgb_embeds,
+            encoder_attention_mask=rgb_atts,
+            return_dict=True,
+        )
+        rgb_feats = F.normalize(self.vision_proj(rgb_output.last_hidden_state), dim=-1)
 
+        # === LiDAR branch ===
+        lidar_feat = lidar.squeeze(1)
+        lidar_proj = self.lidar_input_proj(lidar_feat)
+        lidar_embeds = lidar_proj.flatten(2).transpose(1, 2)
+        lidar_embeds = self.lidar_layernorm(lidar_embeds)
+        lidar_atts = torch.ones(lidar_embeds.size()[:-1], dtype=torch.long, device=lidar.device)
+        query_tokens_lidar = self.query_tokens_lidar.expand(bs, -1, -1)
 
+        lidar_output = self.Qformer_lidar(
+            query_embeds=query_tokens_lidar,
+            encoder_hidden_states=lidar_embeds,
+            encoder_attention_mask=lidar_atts,
+            return_dict=True,
+        )
+        lidar_feats = F.normalize(self.lidar_proj(lidar_output.last_hidden_state), dim=-1)
 
+        # === Pool ===
+        rgb_avg = rgb_feats.mean(dim=1)      # [B, D]
+        lidar_avg = lidar_feats.mean(dim=1)  # [B, D]
 
+        # === Shuffle just like in forward() ===
+        device = image.device
+        if is_train and shuffle_prob > 0:
+            print("shuffle_prob =", shuffle_prob)
+            perm = torch.randperm(bs, device=device)
+            keep_mask = torch.rand(bs, device=device) > shuffle_prob  # True = keep (no shuffle)
 
+            lidar_avg_shuffled = lidar_avg.clone()
+            lidar_avg_shuffled[~keep_mask] = lidar_avg[perm[~keep_mask]]
+
+            targets = torch.arange(bs, device=device)
+            targets_shuffled = targets.clone()
+            targets_shuffled[~keep_mask] = perm[~keep_mask]
+
+            num_mismatched = (~keep_mask).sum().item()
+
+            # === Verbose prints ===
+            print(f"[FF_SHUF] perm          : {perm.tolist()}")
+            print(f"[FF_SHUF] keep_mask     : {keep_mask.tolist()}")
+            print(f"[FF_SHUF] mismatched ct : {num_mismatched}/{bs}")
+            if num_mismatched > 0:
+                print("[FF_SHUF] (idx -> perm[idx]) for mismatched:")
+                mismatched_idx = torch.nonzero(~keep_mask, as_tuple=False).flatten()
+                for i in mismatched_idx.tolist():
+                    print(f"   {i} -> {perm[i].item()}")
+
+            gt_indices = targets_shuffled  # what column is considered GT for each row
+            match_labels = keep_mask.long()  # 1 if true match kept, 0 if mismatched
+        else:
+            print("shuffle_prob =", shuffle_prob)
+            perm = torch.arange(bs, device=device)
+            keep_mask = torch.ones(bs, dtype=torch.bool, device=device)
+            lidar_avg_shuffled = lidar_avg
+            targets_shuffled = torch.arange(bs, device=device)
+            gt_indices = targets_shuffled
+            match_labels = keep_mask.long()
+
+            print("[FF_SHUF] (no shuffle applied)")
+
+        # === Similarity + loss ===
+        sim_matrix = (rgb_avg @ lidar_avg_shuffled.T) * torch.exp(self.log_temp)
+
+        loss_i2t = F.cross_entropy(sim_matrix, targets_shuffled)
+        loss_t2i = F.cross_entropy(sim_matrix.T, targets_shuffled)
+        loss_contrastive = (loss_i2t + loss_t2i) / 2
+
+        print(f"[FF_SHUF] loss_i2t = {loss_i2t.item():.4f}")
+        print(f"[FF_SHUF] loss_t2i = {loss_t2i.item():.4f}")
+        print(f"[FF_SHUF] contrastive_loss = {loss_contrastive.item():.4f}")
+        print(f"[FF_SHUF] sim_matrix[0][:8] = {sim_matrix[0][:8]}")
+        print("============================================================\n")
+
+        # === Diagnostics (optional) ===
+        prob_rgb2lidar = F.softmax(sim_matrix, dim=1)
+        prob_lidar2rgb = F.softmax(sim_matrix.T, dim=1)
+        acc_rgb2lidar = (prob_rgb2lidar.argmax(dim=1) == targets_shuffled).float().mean()
+        acc_lidar2rgb = (prob_lidar2rgb.argmax(dim=1) == targets_shuffled).float().mean()
+        diag_sim = sim_matrix.diag().mean()
+        off_diag_sim = sim_matrix[~torch.eye(bs, dtype=torch.bool, device=sim_matrix.device)].mean()
+
+        return {
+            "rgb_feats": rgb_feats,                  # [B, N, D]
+            "lidar_feats": lidar_feats,              # [B, N, D]
+            "sim_matrix": sim_matrix,                # [B, B] (post-shuffle)
+            "targets": targets_shuffled,             # [B]
+            "perm": perm,                            # [B]
+            "keep_mask": keep_mask,                  # [B] (True=kept, False=shuffled)
+            "gt_indices": gt_indices,                # [B] (for your shuffled-eval path)
+            "match_labels": match_labels,            # [B] (1 if kept, 0 if shuffled)
+            "loss_contrastive": loss_contrastive,    # scalar
+            "diagnostics": {
+                "accuracy": (acc_rgb2lidar + acc_lidar2rgb) / 2,
+                "diag_sim": diag_sim,
+                "off_diag_sim": off_diag_sim,
+            },
+        }
 
 
 

@@ -97,11 +97,17 @@ def main():
     if not cfg.run_cfg.amp:
         model = model.float()
 
-    # print("model")
-    # print(model)
+    
 
+    #     # === Log structure and check log_temp ===
+    # print("[DEBUG] Created Blip2Qformer model")
+    # print(model)  # or optionally: print(model.__class__.__name__)
+    # print("Initial exp(log_temp):", torch.exp(model.log_temp).item())  # should be ~0.1
+
+    # # Optionally write structure to file
+    # with open("blip2qformer_model_structure.txt", "w") as f:
+    #     f.write(str(model))
     # exit()
-
 
     runner = RunnerBaseW(cfg=cfg, job_id=job_id, model=model, datasets=datasets)
     if len(train_dataset) == 0:

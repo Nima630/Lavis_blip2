@@ -4,7 +4,7 @@ Simplified RunnerBaseW for non-distributed 2-GPU training using DataParallel
 from lavis.runners.log_utils import close_writer
 from lavis.runners import log_utils
 from sklearn.metrics import roc_auc_score
-
+import torch.nn.functional as F
 import datetime
 import json
 import logging
@@ -61,7 +61,7 @@ class RunnerBaseW:
             if self._wrapped_model is None:
                 self._wrapped_model = nn.DataParallel(self._model).cuda()
 
-        print(f"[DEBUG] Using {torch.cuda.device_count()} GPUs with DataParallel.")        
+        # print(f"[DEBUG] Using {torch.cuda.device_count()} GPUs with DataParallel.")        
         return self._wrapped_model
 
     @property
@@ -421,7 +421,7 @@ class RunnerBaseW:
                     if use_shuffled:
                         print("----------------------------forward_features_with_shuffling----------------------------")
 
-                        outputs = model.forward_features_with_shuffling(samples, shuffle_prob=0.5)
+                        outputs = model.forward_features_shuffled(samples, shuffle_prob=0.5)
                         return {"loss": None, "output": outputs}
                     else:
                     # Only extract embeddings for retrieval
@@ -541,47 +541,7 @@ class RunnerBaseW:
 # Evaluation 
 # ================================================================
 
-
     def compute_retrieval_metrics_from_outputs(self, output_list, top_k=(1, 5, 10)):
-
-        if "gt_indices" in output_list[0]["output"]:
-            # === Custom shuffling-based evaluation ===
-            sim_list = []
-            gt_idx_list = []
-            label_list = []
-            for out in output_list:
-                sim_list.append(out["output"]["sim_matrix"])
-                gt_idx_list.append(out["output"]["gt_indices"])
-                label_list.append(out["output"]["match_labels"])
-
-            sim_matrix = torch.cat(sim_list, dim=0)
-            gt_indices = torch.cat(gt_idx_list, dim=0)
-            labels = torch.cat(label_list, dim=0)
-
-            # === ROC AUC
-            sim_scores = torch.stack([sim_matrix[i, gt_indices[i]] for i in range(sim_matrix.size(0))])
-            auc = roc_auc_score(labels.cpu().numpy(), sim_scores.cpu().numpy())
-
-            # === Retrieval: Recall@K & MRR
-            B = sim_matrix.size(0)
-            recall_at = {k: 0 for k in top_k}
-            mrr = 0.0
-
-            for i in range(B):
-                ranking = torch.argsort(sim_matrix[i], descending=True)
-                gt_rank = (ranking == gt_indices[i]).nonzero(as_tuple=True)[0].item()
-                mrr += 1.0 / (gt_rank + 1)
-                for k in top_k:
-                    if gt_rank < k:
-                        recall_at[k] += 1
-
-            metrics = {f"recall@{k}_shuffled": recall_at[k] / B for k in top_k}
-            metrics["mrr_shuffled"] = mrr / B
-            metrics["auc_shuffled"] = auc
-
-            return metrics
-
-        else:
             rgb_feats_list = []
             lidar_feats_list = []
 
@@ -594,11 +554,16 @@ class RunnerBaseW:
             lidar_feats = torch.cat(lidar_feats_list, dim=0)  # [B_total, N, D]
 
             rgb_flat = rgb_feats.mean(dim=1)      # [B_total, D]
+            # print("++++++++++++++++++  rgb_feats shape", rgb_feats.shape)
+            # print("++++++++++++++++++  rgb_feats", rgb_feats[0])
+            # print("++++++++++++++++++  rgb_flat", rgb_flat)
             lidar_flat = lidar_feats.mean(dim=1)  # [B_total, D]
 
             sim_matrix = torch.matmul(rgb_flat, lidar_flat.T)  # [B, B]
-            print(f"\n[DEBUG] sim_matrix shape: {sim_matrix.shape}")
-            print(f"[DEBUG] sim_matrix sample row (0): {sim_matrix[0][:5]}")
+            # print("+++++++++++++++++++ sim_matrix")
+            # print(sim_matrix)
+            # print(f"\n[DEBUG] sim_matrix shape: {sim_matrix.shape}")
+            # print(f"[DEBUG] sim_matrix sample row (0): {sim_matrix[5][:8]}")
 
             metrics = {}
             B = sim_matrix.size(0)
@@ -647,91 +612,179 @@ class RunnerBaseW:
 
             loss_i2t = torch.nn.functional.cross_entropy(sim_matrix, targets)
             loss_t2i = torch.nn.functional.cross_entropy(sim_matrix.T, targets)
+
             contrastive_loss = (loss_i2t + loss_t2i) / 2
+            print(f"\n[DEBUG] loss_i2t: {loss_i2t}")
+            print(f"\n[DEBUG] loss_t2i: {loss_t2i}")
+
+
 
             print(f"\n[DEBUG] contrastive_loss: {contrastive_loss.item():.4f}")
             metrics["contrastive_loss"] = contrastive_loss.item()
             return metrics
 
+    # def compute_batchwise_retrieval_metrics(self, output_list, top_k=(1, 5, 10)):
+    #     """
+    #     Computes Recall@K and MRR per batch, using only in-batch negatives (like during training).
+    #     Useful for debugging — not for final evaluation.
+
+    #     Args:
+    #         output_list: list of outputs from each batch (must contain 'rgb_feats' and 'lidar_feats')
+    #         top_k: which Recall@K to compute
+
+    #     Returns:
+    #         dict with averaged recall@k and mrr across all batches
+    #     """
+    #     total_ranks_rgb2lidar = []
+    #     total_ranks_lidar2rgb = []
+    #     total_hits_rgb2lidar = {k: 0 for k in top_k}
+    #     total_hits_lidar2rgb = {k: 0 for k in top_k}
+    #     total_samples = 0
+
+    #     for batch_idx, out in enumerate(output_list):
+    #         rgb_feats = out["output"]["rgb_feats"]  # [B, N, D]
+    #         lidar_feats = out["output"]["lidar_feats"]  # [B, N, D]
+    #         B = rgb_feats.size(0)
+
+    #         rgb_avg = rgb_feats.mean(dim=1)
+    #         lidar_avg = lidar_feats.mean(dim=1)
+
+    #         sim_matrix = rgb_avg @ lidar_avg.T  # no temp needed for ranking
+    #         targets = torch.arange(B, device=sim_matrix.device)
+
+    #         # === RGB → LiDAR ===
+    #         ranking = torch.argsort(sim_matrix, dim=1, descending=True)
+    #         gt_ranks = (ranking == targets.unsqueeze(1)).nonzero(as_tuple=True)[1]
+    #         total_ranks_rgb2lidar.extend(gt_ranks.tolist())
+
+    #         for k in top_k:
+    #             total_hits_rgb2lidar[k] += (gt_ranks < k).sum().item()
+
+    #         # === LiDAR → RGB ===
+    #         sim_matrix_T = sim_matrix.T
+    #         ranking_T = torch.argsort(sim_matrix_T, dim=1, descending=True)
+    #         gt_ranks_T = (ranking_T == targets.unsqueeze(1)).nonzero(as_tuple=True)[1]
+    #         total_ranks_lidar2rgb.extend(gt_ranks_T.tolist())
+
+    #         for k in top_k:
+    #             total_hits_lidar2rgb[k] += (gt_ranks_T < k).sum().item()
+
+    #         total_samples += B
+
+    #         print(f"[Batch {batch_idx}] recall@1_rgb2lidar: {(gt_ranks < 1).float().mean().item():.4f} | recall@1_lidar2rgb: {(gt_ranks_T < 1).float().mean().item():.4f}")
+
+    #     # === Compute averaged metrics ===
+    #     metrics = {}
+    #     for k in top_k:
+    #         metrics[f"recall@{k}_rgb2lidar_batch"] = total_hits_rgb2lidar[k] / total_samples
+    #         metrics[f"recall@{k}_lidar2rgb_batch"] = total_hits_lidar2rgb[k] / total_samples
+
+    #     metrics["mrr_rgb2lidar_batch"] = sum(1.0 / (r + 1) for r in total_ranks_rgb2lidar) / total_samples
+    #     metrics["mrr_lidar2rgb_batch"] = sum(1.0 / (r + 1) for r in total_ranks_lidar2rgb) / total_samples
+
+    #     print(f"\n[DEBUG] Averaged batchwise Recall/MRR over {total_samples} samples")
+
+    #     return metrics
 
 
-    def compute_retrieval_metrics_from_outputs_chunks(self, output_list, top_k=(1, 5, 10)):
-        rgb_feats_list = []
-        lidar_feats_list = []
 
-        # for out in output_list:
-        #     rgb_feats_list.append(out["rgb_feats"])     # [B, N, D]
-        #     lidar_feats_list.append(out["lidar_feats"]) # [B, N, D]
-        for out in output_list:
-            inner_output = out["output"]
-            rgb_feats_list.append(inner_output["rgb_feats"])
-            lidar_feats_list.append(inner_output["lidar_feats"])
+    def compute_batchwise_retrieval_metrics(
+        self,
+        output_list,
+        top_k=(1, 5, 10),
+        use_model_temperature=True,   # True -> use exp(model.log_temp); False -> use fixed_temperature
+        fixed_temperature=0.1,):
+        """
+        Batchwise (training-style) evaluation:
+        - Recall@K and MRR computed *within each batch* (in-batch negatives only) and then averaged.
+        - Contrastive loss computed per batch with the SAME temperature rule as during training,
+            then averaged.
 
-        rgb_feats = torch.cat(rgb_feats_list, dim=0)      # [B_total, N, D]
-        lidar_feats = torch.cat(lidar_feats_list, dim=0)  # [B_total, N, D]
+        Returns a single dict with BOTH retrieval metrics (averaged) and the averaged contrastive loss.
+        """
+        # ---------- accumulators ----------
+        total_samples = 0
 
-        rgb_flat = rgb_feats.mean(dim=1)      # [B_total, D]
-        lidar_flat = lidar_feats.mean(dim=1)  # [B_total, D]
+        total_hits_rgb2lidar = {k: 0 for k in top_k}
+        total_hits_lidar2rgb = {k: 0 for k in top_k}
+        all_ranks_rgb2lidar = []
+        all_ranks_lidar2rgb = []
+        all_losses = []
 
-        B_total = rgb_flat.size(0)
-        print("B_total", B_total)
-        print("----------------------------------------------------")
-        batch_size = output_list[0]["output"]["rgb_feats"].size(0)
-        # batch_size = 32
-        print("batch_size", batch_size)
-        print("----------------------------------------------------")
+        # get temperature source (if wanted)
+        base_model = getattr(self, "model", None)
+        if base_model is not None and hasattr(base_model, "module"):
+            base_model = base_model.module
 
-        num_batches = B_total // batch_size
+        for batch_idx, out in enumerate(output_list):
+            rgb_feats = out["output"]["rgb_feats"]   # [B, N, D]
+            lidar_feats = out["output"]["lidar_feats"]  # [B, N, D]
+            B = rgb_feats.size(0)
 
-        metrics_accum = {
-            f"recall@{k}_rgb2lidar": 0.0 for k in top_k
-        }
-        metrics_accum.update({
-            f"recall@{k}_lidar2rgb": 0.0 for k in top_k
-        })
-        metrics_accum["mrr_rgb2lidar"] = 0.0
-        metrics_accum["mrr_lidar2rgb"] = 0.0
-        metrics_accum["contrastive_loss"] = 0.0
+            rgb_avg = rgb_feats.mean(dim=1)      # [B, D]
+            lidar_avg = lidar_feats.mean(dim=1)  # [B, D]
 
-        for i in range(0, B_total, batch_size):
-            rgb_batch = rgb_flat[i:i+batch_size]
-            lidar_batch = lidar_flat[i:i+batch_size]
+            # ---- Similarity for ranking (no temp) ----
+            sim_raw = rgb_avg @ lidar_avg.T      # [B, B]
+            targets = torch.arange(B, device=sim_raw.device)
 
-            sim_matrix = torch.matmul(rgb_batch, lidar_batch.T)  # [bs, bs]
-            B = sim_matrix.size(0)
+            # ---- Contrastive loss logits (with temp like training) ----
+            if use_model_temperature and (base_model is not None) and hasattr(base_model, "log_temp"):
+                logits = sim_raw * torch.exp(base_model.log_temp)
+            else:
+                # fall back to fixed temp (divide like usual CE temperature scaling)
+                logits = sim_raw / fixed_temperature
 
-            # === Recall@K rgb2lidar ===
+            loss_i2t = F.cross_entropy(logits, targets)
+            loss_t2i = F.cross_entropy(logits.T, targets)
+            loss = (loss_i2t + loss_t2i) / 2
+            all_losses.append(loss.item())
+
+            # ===== RGB → LiDAR =====
+            ranking = torch.argsort(sim_raw, dim=1, descending=True)
+            gt_ranks = (ranking == targets.unsqueeze(1)).nonzero(as_tuple=True)[1]
+            all_ranks_rgb2lidar.extend(gt_ranks.tolist())
+
             for k in top_k:
-                hits = sum([j in torch.topk(sim_matrix[j], k=k).indices for j in range(B)])
-                metrics_accum[f"recall@{k}_rgb2lidar"] += hits / B
+                total_hits_rgb2lidar[k] += (gt_ranks < k).sum().item()
 
-            ranks = [(torch.argsort(sim_matrix[j], descending=True) == j).nonzero(as_tuple=True)[0].item() + 1 for j in range(B)]
-            metrics_accum["mrr_rgb2lidar"] += sum(1.0 / r for r in ranks) / B
+            # ===== LiDAR → RGB =====
+            sim_raw_T = sim_raw.T
+            ranking_T = torch.argsort(sim_raw_T, dim=1, descending=True)
+            gt_ranks_T = (ranking_T == targets.unsqueeze(1)).nonzero(as_tuple=True)[1]
+            all_ranks_lidar2rgb.extend(gt_ranks_T.tolist())
 
-            # === Recall@K lidar2rgb ===
-            sim_matrix_T = sim_matrix.T
             for k in top_k:
-                hits = sum([j in torch.topk(sim_matrix_T[j], k=k).indices for j in range(B)])
-                metrics_accum[f"recall@{k}_lidar2rgb"] += hits / B
+                total_hits_lidar2rgb[k] += (gt_ranks_T < k).sum().item()
 
-            ranks_T = [(torch.argsort(sim_matrix_T[j], descending=True) == j).nonzero(as_tuple=True)[0].item() + 1 for j in range(B)]
-            metrics_accum["mrr_lidar2rgb"] += sum(1.0 / r for r in ranks_T) / B
+            total_samples += B
 
-            # === Contrastive Loss
-            temperature = 0.1
-            sim_matrix_temp = sim_matrix / temperature
-            targets = torch.arange(B).to(sim_matrix.device)
-            loss_i2t = torch.nn.functional.cross_entropy(sim_matrix_temp, targets)
-            loss_t2i = torch.nn.functional.cross_entropy(sim_matrix_temp.T, targets)
-            contrastive_loss = (loss_i2t + loss_t2i) / 2
-            metrics_accum["contrastive_loss"] += contrastive_loss.item()
+            print(f"[Batch {batch_idx}] "
+                f"recall@1_rgb2lidar: {(gt_ranks < 1).float().mean().item():.4f} | "
+                f"recall@1_lidar2rgb: {(gt_ranks_T < 1).float().mean().item():.4f} | "
+                f"loss: {loss.item():.4f}")
 
-        # === Final average across batches
-        for k in metrics_accum:
-            metrics_accum[k] /= num_batches
+        # ---------- aggregate ----------
+        metrics = {}
 
-        return metrics_accum
+        # recalls
+        for k in top_k:
+            metrics[f"recall@{k}_rgb2lidar_batch"] = total_hits_rgb2lidar[k] / total_samples
+            metrics[f"recall@{k}_lidar2rgb_batch"] = total_hits_lidar2rgb[k] / total_samples
 
+        # mrr
+        metrics["mrr_rgb2lidar_batch"] = sum(1.0 / (r + 1) for r in all_ranks_rgb2lidar) / total_samples
+        metrics["mrr_lidar2rgb_batch"] = sum(1.0 / (r + 1) for r in all_ranks_lidar2rgb) / total_samples
+
+        # loss
+        metrics["contrastive_loss_batch_avg"] = sum(all_losses) / len(all_losses)
+        metrics["contrastive_loss_batch_std"] = float(torch.tensor(all_losses).std().item())
+
+        print(f"\n[DEBUG] Averaged batchwise Recall/MRR/Loss over {total_samples} samples")
+        print(f"[DEBUG] contrastive_loss_batch_avg = {metrics['contrastive_loss_batch_avg']:.4f} "
+            f"(std={metrics['contrastive_loss_batch_std']:.4f})")
+
+        return metrics
 
 
     @torch.no_grad()
@@ -750,7 +803,7 @@ class RunnerBaseW:
         print(f"[DEBUG] Dataset size: {len(data_loader.dataset)}")
         
         for i, samples in enumerate(data_loader):
-            # if retrieval_eval and i >= 1:
+            # if retrieval_eval and i >= 10:
             #     break 
             if i % print_freq == 0:
                 print(f"[DEBUG] {header} [{i}/{len(data_loader)}]")
@@ -814,10 +867,14 @@ class RunnerBaseW:
 
             # If retrieval evaluation results were added
             if "output" in val_result and config.run_cfg.get("retrieval_eval", False):
-                # retrieval_metrics = self.compute_retrieval_metrics_from_outputs(val_result["output"])
-                retrieval_metrics = self.compute_retrieval_metrics_from_outputs_chunks(val_result["output"])
-                
-                
+                # retrieval_metrics = self.compute_retrieval_metrics_from_outputs(val_result["output"])  # for all samples 
+                retrieval_metrics = self.compute_batchwise_retrieval_metrics( # for bath by batch, then average batches 
+                    val_result["output"],
+                    top_k=(1, 5, 10),
+                    use_model_temperature=True,   # same as training
+                    fixed_temperature=0.1
+                )
+                                
                 stats.update(retrieval_metrics)
 
             if "retrieval" in val_result:
@@ -826,5 +883,4 @@ class RunnerBaseW:
 
         print("[AFTER_EVAL] Returning stats:", stats)
         return stats
-
 
