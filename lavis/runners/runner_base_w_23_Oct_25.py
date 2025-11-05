@@ -12,7 +12,6 @@ import datetime
 import json
 import logging
 import os
-import numpy as np
 import time
 from pathlib import Path
 from lavis.common.logger import MetricLogger, SmoothedValue
@@ -410,9 +409,7 @@ class RunnerBaseW:
         if raw_loss.ndim != 0:
             raw_loss = raw_loss.mean()
 
-        # loss_dict = {k: v.mean().item() if v.ndim > 0 else v.item() for k, v in output.items() if "loss" in k}
-        loss_dict = {k: v.mean().item() if hasattr(v, "ndim") and v.ndim > 0 else v.item() for k, v in output.items() if k.startswith("L_") or "loss" in k}
-
+        loss_dict = {k: v.mean().item() if v.ndim > 0 else v.item() for k, v in output.items() if "loss" in k}
         return raw_loss, loss_dict
 
 
@@ -426,8 +423,7 @@ class RunnerBaseW:
         use_amp = True
 
         with torch.no_grad():
-            # with autocast("cuda", enabled=use_amp):
-            with torch.amp.autocast("cuda", enabled=use_amp):
+            with autocast("cuda", enabled=use_amp):
                 if retrieval_eval:
                     if use_shuffled:
 
@@ -446,12 +442,8 @@ class RunnerBaseW:
                 else:
                     # Use standard forward that returns loss
                     output = model(samples)
-                    print("output keys:", output.keys())
-                    # loss = output["loss"].item() if "loss" in output else None
-                    # return {"loss": loss, "output": output}
-                    return {k: (v.mean().item() if hasattr(v, "mean") else v.item()) for k, v in output.items()}
-                
-                
+                    loss = output["loss"].item() if "loss" in output else None
+                    return {"loss": loss, "output": output}
 
 
 
@@ -516,10 +508,8 @@ class RunnerBaseW:
                 print(f"[DEBUG] Step {i}, LR: {optimizer.param_groups[0]['lr']:.8f}")
 
             # samples
-            # bsz = samples['image'].size(0)
-            bsz = samples['cam_bev'].size(0)
-            # with torch.cuda.amp.autocast(enabled=use_amp):
-            with torch.amp.autocast("cuda", enabled=use_amp):
+            bsz = samples['image'].size(0)
+            with torch.cuda.amp.autocast(enabled=use_amp):
                 loss, loss_dict = self.train_step(model=model, samples=samples)
                 loss /= accum_grad_iters
 
@@ -771,112 +761,57 @@ class RunnerBaseW:
 
 
     @torch.no_grad()
-    
-    # def evaluation(self, config, model, data_loader, cuda_enabled=True):
-    #     print("\n[DEBUG] Running EVALUATION")
-    #     header = "Evaluation"
-    #     print_freq = 10
-
-    #     total_loss = 0.0
-    #     num_batches = 0
-    #     all_outputs = []
-
-    #     retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
-
-    #     # Print actual dataset length
-    #     print(f"[DEBUG] Dataset size: {len(data_loader.dataset)}")
-        
-    #     for i, samples in enumerate(data_loader):
-    #         # if retrieval_eval and i >= 10:
-    #         #     break 
-    #         if i % print_freq == 0:
-    #             print(f"[DEBUG] {header} [{i}/{len(data_loader)}]")
-
-    #         samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
-    #         eval_output = self.valid_step(config, model=model, samples=samples)
-    #         if retrieval_eval:
-    #             all_outputs.append(eval_output)  # raw features
-    #         else:
-    #             loss = eval_output.get("loss", None)
-    #             output = eval_output.get("output", None)
-    #             if loss is not None:
-    #                 total_loss += loss
-    #             all_outputs.append(output)
-
-    #         num_batches += 1
-
-    #     print(f"[DEBUG] Completed batches: {num_batches}")
-
-    #     if retrieval_eval:
-    #         # print("-----------------------------------------retrieval_eval---------------------------------------------------------------")
-    #         return {
-    #             "output": all_outputs  # for computing Recall@K etc.
-    #         }
-    #     else:
-    #         avg_loss = total_loss / max(num_batches, 1)
-    #         return {
-    #             "loss": avg_loss,
-    #             "output": all_outputs,
-    #         }
-
-
-
-
     def evaluation(self, config, model, data_loader, cuda_enabled=True):
         print("\n[DEBUG] Running EVALUATION")
         header = "Evaluation"
         print_freq = 10
 
-        all_losses = []
-        all_lid = []
-        all_cam = []
+        total_loss = 0.0
+        num_batches = 0
         all_outputs = []
 
         retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
 
+        # Print actual dataset length
         print(f"[DEBUG] Dataset size: {len(data_loader.dataset)}")
-
+        
         for i, samples in enumerate(data_loader):
+            # if retrieval_eval and i >= 10:
+            #     break 
             if i % print_freq == 0:
                 print(f"[DEBUG] {header} [{i}/{len(data_loader)}]")
 
             samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
             eval_output = self.valid_step(config, model=model, samples=samples)
             if retrieval_eval:
-                all_outputs.append(eval_output)
+                all_outputs.append(eval_output)  # raw features
             else:
-                # --- NEW: Gather all losses, not just the main one ---
                 loss = eval_output.get("loss", None)
+                output = eval_output.get("output", None)
                 if loss is not None:
-                    all_losses.append(loss)
-                # Try to get the cross losses as well
-                if "L_cross_lid" in eval_output:
-                    all_lid.append(eval_output["L_cross_lid"])
-                if "L_cross_cam" in eval_output:
-                    all_cam.append(eval_output["L_cross_cam"])
-                all_outputs.append(eval_output)
+                    total_loss += loss
+                all_outputs.append(output)
 
-        print(f"[DEBUG] Completed batches: {len(all_losses)}")
+            num_batches += 1
+
+        print(f"[DEBUG] Completed batches: {num_batches}")
 
         if retrieval_eval:
+            # print("-----------------------------------------retrieval_eval---------------------------------------------------------------")
             return {
                 "output": all_outputs  # for computing Recall@K etc.
             }
         else:
-            avg_loss = np.mean(all_losses) if all_losses else 0.0
-            avg_lid = np.mean(all_lid) if all_lid else 0.0
-            avg_cam = np.mean(all_cam) if all_cam else 0.0
+            avg_loss = total_loss / max(num_batches, 1)
             return {
                 "loss": avg_loss,
-                "L_cross_lid": avg_lid,
-                "L_cross_cam": avg_cam,
+                "output": all_outputs,
             }
-
 
 
     def after_evaluation(self, config, val_result, split_name, epoch):
         # print("------------------------------------------------------------------------------------------------------------------------------")
-        print("VAL_RESULT DICT:", val_result)
+
         """
         Process the results after evaluation.
 
@@ -926,10 +861,6 @@ class RunnerBaseW:
                 retrieval_metrics = val_result["retrieval"]
                 stats.update(retrieval_metrics)
 
-
-            for k, v in val_result.items():
-                if k not in stats and k not in ["metrics", "output", "retrieval"]:
-                    stats[k] = v
         print("[AFTER_EVAL] Returning stats:", stats)
         return stats
 

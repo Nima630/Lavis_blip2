@@ -27,6 +27,9 @@ from omegaconf import OmegaConf
 from lavis.common.registry import registry
 import sys
 
+print("CUDA_VISIBLE_DEVICES:", os.getenv("CUDA_VISIBLE_DEVICES"))
+print("Visible GPUs:", torch.cuda.device_count())
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training")

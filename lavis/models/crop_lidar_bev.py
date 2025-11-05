@@ -65,12 +65,98 @@ def run_crop_from_files(camera_path, lidar_path, bev_resolution, pc_range):
     return cropped
 
 
+# saving the mask 
+def save_lidar_mask_only(camera_path, lidar_path, bev_resolution, pc_range, out_path):
+    """
+    Generates and saves the binary lidar mask as a tensor file.
+
+    Args:
+        out_path (str): Path where to save the .pt mask (as tensor of shape [1, H, W])
+    """
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    camera_data = torch.load(camera_path, weights_only=False)
+    lidar_data = torch.load(lidar_path, weights_only=False)
+
+    lidar_feat = lidar_data['feat'].squeeze(0)
+    lidar2img = camera_data['lidar2img']
+    img_shape = tuple(camera_data['img_shape'][0])[:2]
+
+    C, H, W = lidar_feat.shape
+    dx = (pc_range[3] - pc_range[0]) / W
+    dy = (pc_range[4] - pc_range[1]) / H
+
+    xs = np.linspace(pc_range[0] + dx / 2, pc_range[3] - dx / 2, W)
+    ys = np.linspace(pc_range[1] + dy / 2, pc_range[4] - dy / 2, H)
+    xs, ys = np.meshgrid(xs, ys)
+    zs = np.zeros_like(xs)
+
+    points_lidar = np.stack([xs, ys, zs, np.ones_like(xs)], axis=-1).reshape(-1, 4)
+    points_img = (lidar2img @ points_lidar.T).T
+    points_img[:, 0] /= points_img[:, 2] + 1e-5
+    points_img[:, 1] /= points_img[:, 2] + 1e-5
+
+    img_w, img_h = img_shape[1], img_shape[0]
+    valid = (
+        (points_img[:, 0] >= 0) & (points_img[:, 0] < img_w) &
+        (points_img[:, 1] >= 0) & (points_img[:, 1] < img_h) &
+        (points_img[:, 2] > 0)
+    )
+    valid_mask = valid.reshape(H, W)
+    if not isinstance(valid_mask, torch.Tensor):
+        valid_mask = torch.from_numpy(valid_mask)
+    valid_mask = valid_mask.float().unsqueeze(0)  # [1, H, W]
+
+    torch.save(valid_mask, out_path)
+    print(f"[INFO] Mask saved at: {out_path}")
+
+
+
+
 if __name__ == "__main__":
     # Example usage
-    camera_example = "/home/draiman/Desktop/Datasets/validation/resnet/CAM_FRONT/ffec010a27b4462f86b78e2e41d14f42.pt"
-    lidar_example = "/home/draiman/Desktop/Datasets/validation/lidar_val/ffec010a27b4462f86b78e2e41d14f42.pt"
+    camera_example = "/home/draiman/Desktop/Datasets_nuscenes/validation/resnet/CAM_FRONT/ffec010a27b4462f86b78e2e41d14f42.pt"
+    lidar_example = "/home/draiman/Desktop/Datasets_nuscenes/validation/lidar/ffec010a27b4462f86b78e2e41d14f42.pt"
 
     bev_resolution = (1.14, 1.14)
     pc_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
 
     _ = run_crop_from_files(camera_example, lidar_example, bev_resolution, pc_range)
+    
+    # to save the mask 
+    # output_mask_path = "./result/lidar_mask_tensor.pt"
+    # save_lidar_mask_only(camera_example, lidar_example, bev_resolution, pc_range, output_mask_path)
+
+
+
+# plotting the mask to make sure 
+
+# import torch
+# import matplotlib.pyplot as plt
+# import os
+
+# def plot_lidar_mask(mask_path, save_path=None):
+#     # Load the saved mask tensor
+#     mask = torch.load(mask_path)  # Expected shape: [1, H, W]
+    
+#     if mask.dim() == 3:
+#         mask = mask.squeeze(0)  # Shape: [H, W]
+
+#     # Plot the mask
+#     plt.figure(figsize=(6, 6))
+#     plt.imshow(mask.cpu().numpy(), cmap='gray')
+#     plt.title("LiDAR FOV Mask")
+#     plt.axis('off')
+
+#     if save_path:
+#         os.makedirs(os.path.dirname(save_path), exist_ok=True)
+#         plt.savefig(save_path, bbox_inches='tight')
+#         print(f"[INFO] Saved mask plot to: {save_path}")
+#     else:
+#         plt.show()
+
+# if __name__ == "__main__":
+#     mask_path = "./result/lidar_mask_tensor.pt"
+#     save_path = "./result/lidar_mask_plot_new.png"
+#     plot_lidar_mask(mask_path, save_path)

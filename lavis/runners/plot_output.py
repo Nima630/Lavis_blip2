@@ -66,3 +66,10 @@ if __name__ == "__main__":
 
     # to run 
     # python plot_output.py ../output/BLIP2/CAM_FRONT_Qform_mini/20250724143/log.txt
+
+    # python plot_output.py ../output/BLIP2/mini_learnable_position_added/20250726102/log.txt
+    # python plot_output.py ../output/BLIP2/mini_learnable_position_added/20250726153/log.txt
+
+
+
+
