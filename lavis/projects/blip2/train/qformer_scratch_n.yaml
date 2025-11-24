@@ -58,54 +58,7 @@ datasets:
             storage: lavis/my_datasets/nuscenes_dataset/nuscenes_lidar_annotations_val.json
           test:
             storage: lavis/my_datasets/nuscenes_dataset/nuscenes_lidar_annotations_test.json
-      # 
-      # camera:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/train/resnet/CAM_FRONT 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/resnet/CAM_FRONT 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/resnet/CAM_FRONT 
-
-      # lidar:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/train/lidar #_tiny
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar #_tiny
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar
-
-
-      # tiny
-
-
-      # resnet
-      # camera:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/train/resnet/CAM_FRONT 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/resnet/CAM_FRONT 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/resnet/CAM_FRONT 
-
-
-      # fpn
-      # camera:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/train/fpn/CAM_FRONT 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/fpn/CAM_FRONT 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/fpn/CAM_FRONT 
-
-      # lidar:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/train/lidar 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/lidar 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/lidar
-
+      
 
 
       # fpn
@@ -137,19 +90,18 @@ run:
   warmup_lr: 1e-6
   # lr_layer_decay: 0.9 # uncomment this which not useing linear_warmup_cosine_lr
   weight_decay: 0.05
-  max_epoch: 200 #500 
-  val_freq: 2 # evaluate every n epochs
+  max_epoch: 1 #200 #500 
+  val_freq: 0 #2 # evaluate every n epochs
   save_freq: 2 # n epochs (not used for now)
-  batch_size_train:  4 #32
-  batch_size_eval: 4
+  batch_size_train:  1 #8 #32
+  batch_size_eval: 1 #8
   num_workers: 0 #4
   accum_grad_iters: 8 # batch_size_train x accum_grad_iters = effective batch size 
   warmup_steps: 4 #50 #20 #5
   seed: 42
-  output_dir: "output/BLIP2/CAM_FRONT_Qform_mini_new_checkpointing__"
-  amp:  true
-  # only uncommented when resuming traning or when evaluate only (to only evaluate, set evaluate to true)
-  # resume_ckpt_path: "lavis/output/BLIP2/qformer_scratch_nuscenes/20250429233/checkpoint_best.pth" 
+  output_dir: "output/BLIP2/CAM_FRONT_Qform_mini_Adn_1_debug"
+  amp:  true 
+  # resume_ckpt_path: "lavis/output/BLIP2/CAM_FRONT_Qform_mini_Adn_1/....../checkpoint_best.pth"  # only uncommented when resuming traning or when evaluate only (to only evaluate, set evaluate to true)
   use_shuffled_validation: false 
   evaluate: false
   train_splits: ["train"]

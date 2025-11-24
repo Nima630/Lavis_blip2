@@ -128,11 +128,17 @@ if __name__ == "__main__":
         print("Running with default hardcoded paths for demonstration.")
         from types import SimpleNamespace
         args = SimpleNamespace(
-             sample_data_json="/home/draiman/Desktop/datasets/nuscenes/v1.0-trainval/sample_data.json",
+            sample_data_json="/home/draiman/Desktop/datasets/nuscenes/v1.0-trainval/sample_data.json",
+            
             #  infos_pkl="/home/draiman/Desktop/datasets/nuscenes/nuscenes_infos_temporal_val.pkl",
             #  output_csv="nusc_val_metadata.csv"
             infos_pkl="/home/draiman/Desktop/datasets/nuscenes/nuscenes_infos_temporal_train.pkl",
              output_csv="nusc_train_metadata.csv"
+            #  sample_data_json="/home/draiman/Desktop/datasets/nuscenes_pseudo_test/v1.0-pseudo-test/sample_data.json",
+            #  infos_pkl="/home/draiman/Desktop/datasets/nuscenes_pseudo_test/nuscenes_infos_temporal_test.pkl",
+            #  output_csv="nusc_pseudo_test_metadata.csv"
+
+
         )
     main(args)
 
@@ -146,4 +152,72 @@ if __name__ == "__main__":
 
 
 
+# just to see the structure of the pseudo-test pkl
+# import pickle
+# from pathlib import Path
 
+# # ===========================================================
+# # ABSOLUTE PATH TO YOUR pseudo-test PKL:
+# # ===========================================================
+# INFOS_PATH = Path("/home/draiman/Desktop/datasets/nuscenes_pseudo_test/nuscenes_infos_temporal_test.pkl")
+
+# print(f"[INFO] Loading infos from:\n{INFOS_PATH}\n")
+
+# if not INFOS_PATH.exists():
+#     raise FileNotFoundError(f"[ERROR] File does not exist: {INFOS_PATH}")
+
+# # ===========================================================
+# # Load PKL
+# # ===========================================================
+# data = pickle.load(open(INFOS_PATH, "rb"))
+
+# print("Top-level keys in the PKL:")
+# print(list(data.keys()))
+# print("-" * 50)
+
+# # ===========================================================
+# # Check "infos" key exists
+# # ===========================================================
+# if "infos" not in data:
+#     raise KeyError("[ERROR] 'infos' key not found in PKL. This PKL cannot be used for metadata.")
+
+# infos = data["infos"]
+# print(f"[INFO] Number of infos entries: {len(infos)}")
+
+# # ===========================================================
+# # Inspect the first few infos
+# # ===========================================================
+# print("\n[INFO] Checking first 3 entries...\n")
+
+# for i in range(min(3, len(infos))):
+#     info = infos[i]
+#     print(f"---- INFO {i} ----")
+
+#     # Check for cams key
+#     if "cams" not in info:
+#         print("[ERROR] 'cams' key missing in this info entry!")
+#         continue
+
+#     cams = info["cams"]
+#     print("Available cameras:", list(cams.keys()))
+
+#     # Inspect each camera
+#     for cam_name, cam_data in cams.items():
+#         print(f"\nCamera: {cam_name}")
+
+#         # Check mandatory fields
+#         sd_token = cam_data.get("sample_data_token")
+#         print("  sample_data_token:", sd_token)
+
+#         ci = cam_data.get("cam_intrinsic")
+#         print("  cam_intrinsic:", "FOUND" if ci is not None else "MISSING")
+
+#         r = cam_data.get("sensor2ego_rotation")
+#         print("  sensor2ego_rotation:", "FOUND" if r is not None else "MISSING")
+
+#         t = cam_data.get("sensor2ego_translation")
+#         print("  sensor2ego_translation:", "FOUND" if t is not None else "MISSING")
+
+#     print("-" * 50)
+
+# print("\n[DONE] Inspection complete.\n")

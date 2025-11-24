@@ -1081,52 +1081,6 @@ class TorchCameraBEVDataset:
         }
 
 
-    # def __getitem__(self, idx):
-    #     token = self.sample_tokens[idx]
-    #     cam_feat = self._load_camera_feat(token)  # [1,C,Hf,Wf]
-    #     B, C, Hf, Wf = cam_feat.shape
-    #     stride = self._stride
-
-    #     calib = self._lookup_calib(token)
-    #     # Compute pixel centers (dynamic stride)
-    #     i = torch.arange(Hf, dtype=torch.float32) + 0.5
-    #     j = torch.arange(Wf, dtype=torch.float32) + 0.5
-    #     V, U = torch.meshgrid(i * stride, j * stride, indexing='ij')
-    #     uv1 = np.stack([U.reshape(-1).numpy(), V.reshape(-1).numpy(), np.ones(Hf * Wf)], axis=0)
-    #     K_inv = np.linalg.inv(calib.K)
-    #     rays_cam = K_inv @ uv1
-    #     rays_cam[1, :] *= -1.0
-    #     rays_ego = calib.R @ rays_cam
-    #     dir_z = rays_ego[2, :]
-    #     cam_z = calib.T[2]
-    #     s_ground = -cam_z / (dir_z + 1e-12)
-    #     Xg = calib.T[0] + s_ground * rays_ego[0, :]
-    #     Yg = calib.T[1] + s_ground * rays_ego[1, :]
-    #     ix = ((Xg - self.bev_spec.x_min) / self.bev_spec.cell_x).astype(np.int64)
-    #     iy = ((Yg - self.bev_spec.y_min) / self.bev_spec.cell_y).astype(np.int64)
-    #     valid = (ix >= 0) & (ix < self.bev_spec.H) & (iy >= 0) & (iy < self.bev_spec.W) & (s_ground > 0)
-
-    #     # Print valid splats info
-    #     print(f"[2D] Valid splats: {valid.sum()} / {Hf * Wf} for token {token}")
-
-    #     bev_grid = torch.zeros((B, C, self.bev_spec.H, self.bev_spec.W), dtype=cam_feat.dtype)
-    #     cam_feat_flat = cam_feat.reshape(B, C, -1)
-    #     valid_idx = np.flatnonzero(valid)
-    #     ix_valid = torch.from_numpy(ix[valid]).long()
-    #     iy_valid = torch.from_numpy(iy[valid]).long()
-    #     cam_feat_valid = cam_feat_flat[:, :, valid_idx]
-    #     for b in range(B):
-    #         bev_flat = bev_grid[b].reshape(C, -1)
-    #         linear_idx = ix_valid * self.bev_spec.W + iy_valid
-    #         bev_flat.scatter_add_(1, linear_idx.unsqueeze(0).expand(C, -1), cam_feat_valid[b])
-    #         bev_grid[b] = bev_flat.reshape(C, self.bev_spec.H, self.bev_spec.W)
-
-    #     return {
-    #         "cam_bev": bev_grid.squeeze(0),
-    #         "image_id": token,
-    #     }
-
-
 
     def collater(self, samples):
         samples = [s for s in samples if s is not None]

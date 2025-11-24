@@ -439,85 +439,85 @@ from torch.utils.checkpoint import checkpoint
 #         "pretrain_qformer": "configs/models/blip2/blip2_pretrain_qformer.yaml",
 #     }
 
-#     def __init__(
-#         self,
-#         vit_model=None,
-#         img_size=224,
-#         drop_path_rate=0,
-#         use_grad_checkpoint=True, #False,
-#         vit_precision="fp16",
-#         freeze_vit=True,
-#         num_query_token=32,
-#         cross_attention_freq=1,
-#         embed_dim=256,
-#         max_txt_len=32,):
-#         super().__init__()
+    # def __init__(
+    #     self,
+    #     vit_model=None,
+    #     img_size=224,
+    #     drop_path_rate=0,
+    #     use_grad_checkpoint=True, #False,
+    #     vit_precision="fp16",
+    #     freeze_vit=True,
+    #     num_query_token=32,
+    #     cross_attention_freq=1,
+    #     embed_dim=256,
+    #     max_txt_len=32,):
+    #     super().__init__()
 
-#         # hidden_dim = 768
-#         hidden_dim = 256
-#         self.hidden_dim = hidden_dim
-#         # self.rgb_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim) # resnet
-#         # # self.rgb_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim) # fpn
-#         # self.lidar_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim)
+    #     # hidden_dim = 768
+    #     hidden_dim = 256
+    #     self.hidden_dim = hidden_dim
+    #     # self.rgb_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim) # resnet
+    #     # # self.rgb_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim) # fpn
+    #     # self.lidar_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim)
         
-#         self.rgb_layernorm = nn.LayerNorm(hidden_dim)
-#         self.lidar_layernorm = nn.LayerNorm(hidden_dim)
+    #     self.rgb_layernorm = nn.LayerNorm(hidden_dim)
+    #     self.lidar_layernorm = nn.LayerNorm(hidden_dim)
 
-#         # self.Qformer, self.query_tokens = self.init_Qformer(num_query_token, hidden_dim, cross_attention_freq)
-#         # qformer_lidar, query_tokens_lidar = self.init_Qformer(num_query_token, hidden_dim, cross_attention_freq)
-#         # self.Qformer_lidar = qformer_lidar
-#         # self.query_tokens_lidar = nn.Parameter(query_tokens_lidar.data.clone())
-#         # self.register_parameter("query_tokens_lidar", self.query_tokens_lidar)
-#         self.use_grad_checkpoint = use_grad_checkpoint
-#         self.vision_proj = nn.Linear(hidden_dim, embed_dim)
-#         self.lidar_proj = nn.Linear(hidden_dim, embed_dim)
-#         self.log_temp = nn.Parameter(torch.log(torch.tensor(0.1)))  # Learnable temp
+    #     # self.Qformer, self.query_tokens = self.init_Qformer(num_query_token, hidden_dim, cross_attention_freq)
+    #     # qformer_lidar, query_tokens_lidar = self.init_Qformer(num_query_token, hidden_dim, cross_attention_freq)
+    #     # self.Qformer_lidar = qformer_lidar
+    #     # self.query_tokens_lidar = nn.Parameter(query_tokens_lidar.data.clone())
+    #     # self.register_parameter("query_tokens_lidar", self.query_tokens_lidar)
+    #     self.use_grad_checkpoint = use_grad_checkpoint
+    #     self.vision_proj = nn.Linear(hidden_dim, embed_dim)
+    #     self.lidar_proj = nn.Linear(hidden_dim, embed_dim)
+    #     self.log_temp = nn.Parameter(torch.log(torch.tensor(0.1)))  # Learnable temp
         
-#         self.temp = nn.Parameter(0.07 * torch.ones([]))
-#         self.dropout = nn.Dropout(p=0.1)
+    #     self.temp = nn.Parameter(0.07 * torch.ones([]))
+    #     self.dropout = nn.Dropout(p=0.1)
 
-#         # cache to avoid re-building sincos every forward if size doesn't change
-#         self._cached_rgb_hw   = None
-#         self._cached_rgb_pos  = None
-#         self._cached_lidar_hw = None
-#         self._cached_lidar_pos= None
-#         heads = 4 #8
-#         self.heads = heads
-#         H = 125
-#         W = 200
-#         # self.relative_bias = RelativePositionBias(num_heads=heads, window_size=(H, W))
-#         self.attn = nn.MultiheadAttention(hidden_dim, heads, batch_first=True)
-#         self.ffn = nn.Sequential(
-#             nn.Linear(hidden_dim, 2 * hidden_dim),
-#             nn.GELU(),
-#             nn.Linear(2 * hidden_dim, hidden_dim)
-#         )
-#         self.norm1 = nn.LayerNorm(hidden_dim)
-#         self.norm2 = nn.LayerNorm(hidden_dim)
-#         self.norm3 = nn.LayerNorm(hidden_dim)
+    #     # cache to avoid re-building sincos every forward if size doesn't change
+    #     self._cached_rgb_hw   = None
+    #     self._cached_rgb_pos  = None
+    #     self._cached_lidar_hw = None
+    #     self._cached_lidar_pos= None
+    #     heads = 4 #8
+    #     self.heads = heads
+    #     H = 125
+    #     W = 200
+    #     # self.relative_bias = RelativePositionBias(num_heads=heads, window_size=(H, W))
+    #     self.attn = nn.MultiheadAttention(hidden_dim, heads, batch_first=True)
+    #     self.ffn = nn.Sequential(
+    #         nn.Linear(hidden_dim, 2 * hidden_dim),
+    #         nn.GELU(),
+    #         nn.Linear(2 * hidden_dim, hidden_dim)
+    #     )
+    #     self.norm1 = nn.LayerNorm(hidden_dim)
+    #     self.norm2 = nn.LayerNorm(hidden_dim)
+    #     self.norm3 = nn.LayerNorm(hidden_dim)
 
 
 
-#     def init_feature_projection(self, in_dim, out_dim):
-#         return nn.Conv2d(in_dim, out_dim, kernel_size=1)
+    # def init_feature_projection(self, in_dim, out_dim):
+    #     return nn.Conv2d(in_dim, out_dim, kernel_size=1)
 
-#     def _diversity_loss(self, features):
-#         """Penalizes collapsed feature representations.
-#         Args:
-#             features: [batch_size, feature_dim]
-#         Returns:
-#             loss: scalar tensor
-#         """
-#         # Normalize features first to get valid cosine similarity
-#         features = F.normalize(features, dim=-1)
-#         sim_matrix = torch.mm(features, features.t())  # [B,B]
-#         # print("---------------------- sim_matrix", sim_matrix)
-#         # Mask to exclude diagonal (self-similarities)
-#         mask = ~torch.eye(features.size(0), dtype=torch.bool, device=features.device)
-#         avg_sim = sim_matrix[mask].mean()
+    # def _diversity_loss(self, features):
+    #     """Penalizes collapsed feature representations.
+    #     Args:
+    #         features: [batch_size, feature_dim]
+    #     Returns:
+    #         loss: scalar tensor
+    #     """
+    #     # Normalize features first to get valid cosine similarity
+    #     features = F.normalize(features, dim=-1)
+    #     sim_matrix = torch.mm(features, features.t())  # [B,B]
+    #     # print("---------------------- sim_matrix", sim_matrix)
+    #     # Mask to exclude diagonal (self-similarities)
+    #     mask = ~torch.eye(features.size(0), dtype=torch.bool, device=features.device)
+    #     avg_sim = sim_matrix[mask].mean()
         
-#         # Target 0.0 average similarity between different samples
-#         return torch.abs(avg_sim)
+    #     # Target 0.0 average similarity between different samples
+    #     return torch.abs(avg_sim)
 
 
 
@@ -1101,151 +1101,38 @@ from torch.utils.checkpoint import checkpoint
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
-
-# deleted duplicate WindowPartitioner class
-# class WindowPartitioner:
-#     def __init__(self, window_size):
-#         self.window_size = window_size
-
-#     def partition(self, x):
-#         """
-#         Args:
-#             x: (B, H, W, C)
-#         Returns:
-#             windows: (num_windows*B, window_size, window_size, C)
-#         """
-#         B, H, W, C = x.shape
-#         assert H % self.window_size == 0 and W % self.window_size == 0, "H and W must be divisible by window_size"
-#         x = x.view(B,
-#                    H // self.window_size, self.window_size,
-#                    W // self.window_size, self.window_size,
-#                    C)
-#         # permute to group windows together
-#         windows = x.permute(0, 1, 3, 2, 4, 5).reshape(-1, self.window_size, self.window_size, C)
-#         return windows
-
-#     def merge(self, windows, H, W):
-#         """
-#         Args:
-#             windows: (num_windows*B, window_size, window_size, C)
-#             H, W: target height/width
-#         Returns:
-#             x: (B, H, W, C)
-#         """
-#         B = int(windows.shape[0] / (H * W / self.window_size / self.window_size))
-#         x = windows.view(B,
-#                         H // self.window_size, W // self.window_size,
-#                         self.window_size, self.window_size, -1)
-#         # reverse the permutation
-#         x = x.permute(0, 1, 3, 2, 4, 5).reshape(B, H, W, -1)
-#         return x
-
-
-
-
-# class WindowPartitioner:
-#     def __init__(self, window_size):
-#         self.window_size = window_size
-
-#     def partition(self, x):
-#         # x: (B, H, W, C)
-#         B, H, W, C = x.shape
-#         assert H % self.window_size == 0 and W % self.window_size == 0, "H and W must be divisible by window_size"
-#         x = x.view(B, H // self.window_size, self.window_size, W // self.window_size, self.window_size, C)
-#         windows = x.permute(0, 1, 3, 2, 4, 5).reshape(-1, self.window_size, self.window_size, C)
-#         return windows
-
-#     def merge(self, windows, H, W):
-#         B = int(windows.shape[0] / (H * W / self.window_size / self.window_size))
-#         x = windows.view(B, H // self.window_size, W // self.window_size, self.window_size, self.window_size, -1)
-#         x = x.permute(0, 1, 3, 2, 4, 5).reshape(B, H, W, -1)
-#         return x
-
-# # with  duplicated parameters, residuals and partition 
-# class FusionBlock(nn.Module):
-#     def __init__(self, hidden_dim, heads, H, W, window_size=10):
-#         super().__init__()
-#         self.norm1_rgb = nn.LayerNorm(hidden_dim)
-#         self.norm1_lidar = nn.LayerNorm(hidden_dim)
-#         self.norm2_rgb = nn.LayerNorm(hidden_dim)
-#         self.norm2_lidar = nn.LayerNorm(hidden_dim)
-#         self.norm3_rgb = nn.LayerNorm(hidden_dim)
-#         self.norm3_lidar = nn.LayerNorm(hidden_dim)
-#         self.attn_rgb_self = nn.MultiheadAttention(hidden_dim, heads, batch_first=True)
-#         self.attn_lidar_self = nn.MultiheadAttention(hidden_dim, heads, batch_first=True)
-#         self.attn_cam_to_lidar = nn.MultiheadAttention(hidden_dim, heads, batch_first=True)
-#         self.attn_lidar_to_cam = nn.MultiheadAttention(hidden_dim, heads, batch_first=True)
-#         self.ffn = nn.Sequential(
-#             nn.Linear(hidden_dim, 2 * hidden_dim),
-#             nn.GELU(),
-#             nn.Linear(2 * hidden_dim, hidden_dim)
-#         )
-#         self.H = H
-#         self.W = W
-#         self.window_size = window_size
-#         self.partitioner = WindowPartitioner(window_size)
-
-#     def windowed_attention(self, x, attn):
-#         # x: [B, HW, C] --> [B, H, W, C]
-#         B, HW, C = x.shape
-#         H, W = self.H, self.W
-#         x_2d = x.view(B, H, W, C)
-#         windows = self.partitioner.partition(x_2d)  # [num_windows*B, ws, ws, C]
-#         ws = self.window_size
-#         windows = windows.view(-1, ws * ws, C)
-#         attn_windows, _ = attn(windows, windows, windows, need_weights=False)
-#         attn_windows = attn_windows.view(-1, ws, ws, C)
-#         x_2d_out = self.partitioner.merge(attn_windows, H, W)
-#         return x_2d_out.view(B, HW, C)
-
-#     def windowed_cross_attention(self, q, k, v, attn):
-#         # q, k, v: [B, HW, C] --> [B, H, W, C]
-#         B, HW, C = q.shape
-#         H, W = self.H, self.W
-#         ws = self.window_size
-#         q_2d = q.view(B, H, W, C)
-#         k_2d = k.view(B, H, W, C)
-#         v_2d = v.view(B, H, W, C)
-#         q_w = self.partitioner.partition(q_2d).view(-1, ws * ws, C)
-#         k_w = self.partitioner.partition(k_2d).view(-1, ws * ws, C)
-#         v_w = self.partitioner.partition(v_2d).view(-1, ws * ws, C)
-#         attn_windows, _ = attn(q_w, k_w, v_w, need_weights=False)
-#         attn_windows = attn_windows.view(-1, ws, ws, C)
-#         out_2d = self.partitioner.merge(attn_windows, H, W)
-#         return out_2d.view(B, HW, C)
-
-#     def forward(self, rgb_in, lidar_in):
-#         # ---- Self-Attention ----
-#         rgb_norm = self.norm1_rgb(rgb_in)
-#         rgb_self = self.windowed_attention(rgb_norm, self.attn_rgb_self)
-#         rgb_self = rgb_in + rgb_self
-
-#         lidar_norm = self.norm1_lidar(lidar_in)
-#         lidar_self = self.windowed_attention(lidar_norm, self.attn_lidar_self)
-#         lidar_self = lidar_in + lidar_self
-
-#         # ---- Cross-Attention ----
-#         q_cam  = self.norm2_rgb(rgb_self)
-#         k_lid  = self.norm2_lidar(lidar_self)
-#         v_lid  = self.norm2_lidar(lidar_self)
-#         cam_fused = self.windowed_cross_attention(q_cam, k_lid, v_lid, self.attn_cam_to_lidar)
-#         cam_fused = rgb_self + cam_fused
-
-#         q_lid  = self.norm2_lidar(lidar_self)
-#         k_cam  = self.norm2_rgb(rgb_self)
-#         v_cam  = self.norm2_rgb(rgb_self)
-#         lid_fused = self.windowed_cross_attention(q_lid, k_cam, v_cam, self.attn_lidar_to_cam)
-#         lid_fused = lidar_self + lid_fused
-
-#         # ---- FFN + Residual ----
-#         cam_out = cam_fused + self.ffn(self.norm3_rgb(cam_fused))
-#         lid_out = lid_fused + self.ffn(self.norm3_lidar(lid_fused))
-#         return cam_out, lid_out
-
 
 
 
@@ -1280,7 +1167,7 @@ class FusionBlock(nn.Module):
             nn.GELU(),
             nn.Linear(2 * hidden_dim, hidden_dim)
         )
-    def forward(self, rgb_in, lidar_in):
+    def forward(self, rgb_in, lidar_in, cam_mask=None, lidar_mask=None):
         # Self-attention
         rgb_self, _ = self.attn_rgb_self(self.norm1_rgb(rgb_in), self.norm1_rgb(rgb_in), self.norm1_rgb(rgb_in), need_weights=False)
         rgb_self = rgb_in + rgb_self 
@@ -1288,27 +1175,41 @@ class FusionBlock(nn.Module):
         lidar_self, _ = self.attn_lidar_self(self.norm1_lidar(lidar_in), self.norm1_lidar(lidar_in), self.norm1_lidar(lidar_in), need_weights=False)
         lidar_self = lidar_in + lidar_self 
 
-        
+
         # Cross-attention
         q_cam  = self.norm2_rgb(rgb_self)
-        k_lid  = self.norm2_lidar(lidar_self)
-        v_lid  = self.norm2_lidar(lidar_self)
-        cam_fused, _ = self.attn_cam_to_lidar(q_cam, k_lid, v_lid, need_weights=False)
-        cam_fused = rgb_self + cam_fused
-        
-        # and for the reverse path:
         q_lid  = self.norm2_lidar(lidar_self)
-        k_cam  = self.norm2_rgb(rgb_self)
-        v_cam  = self.norm2_rgb(rgb_self)
-        lid_fused, _ = self.attn_lidar_to_cam(q_lid, k_cam, v_cam, need_weights=False)
-        lid_fused = lidar_self + lid_fused 
+
+        # === apply random masking on features (zero out masked tokens) ===
+        if lidar_mask is not None:
+            # lidar_mask: [B, N] → [B, N, 1] for broadcasting
+            lidar_self = lidar_self.masked_fill(lidar_mask.unsqueeze(-1), 0.0)
+        if cam_mask is not None:
+            rgb_self = rgb_self.masked_fill(cam_mask.unsqueeze(-1), 0.0)
+
+        # commente the cross-attnion and ffn parts to test only self-attention   
+
+        # # Cross-attention
+        # k_lid  = self.norm2_lidar(lidar_self)
+        # v_lid  = self.norm2_lidar(lidar_self)
+        # cam_fused, _ = self.attn_cam_to_lidar(q_cam, k_lid, v_lid, need_weights=False)
+        # cam_fused = rgb_self + cam_fused
+        
+        # # and for the reverse path:
+        # k_cam  = self.norm2_rgb(rgb_self)
+        # v_cam  = self.norm2_rgb(rgb_self)
+        # lid_fused, _ = self.attn_lidar_to_cam(q_lid, k_cam, v_cam, need_weights=False)
+        # lid_fused = lidar_self + lid_fused 
 
         
-        # FFN + residual
-        cam_out = cam_fused + self.ffn(self.norm3_rgb(cam_fused))
-        lid_out = lid_fused + self.ffn(self.norm3_lidar(lid_fused))
+        # # FFN + residual
+        # cam_out = cam_fused + self.ffn(self.norm3_rgb(cam_fused))
+        # lid_out = lid_fused + self.ffn(self.norm3_lidar(lid_fused))
         
-        return cam_out, lid_out
+        # return cam_out, lid_out
+
+
+        return rgb_self, lidar_self
 
 
 
@@ -1335,8 +1236,10 @@ class Blip2Qformer(Blip2Base):
         max_txt_len=32,
         hidden_dim=256,
         # num_layers=4,
-        num_layers=2,
+        num_layers=4,
         heads=4,
+        mask_ratio=0.2,
+        block_size=2,
     ):
         super().__init__()
 
@@ -1364,7 +1267,8 @@ class Blip2Qformer(Blip2Base):
         # self.fusion_layers = nn.ModuleList([
         #     FusionBlock(hidden_dim, heads, H, W) for _ in range(num_layers)
         # ])
-
+        self.mask_ratio = mask_ratio
+        self.block_size = block_size        
 
     def _build_2d_sincos_pos_embed(self, h, w, dim, device):
         def get_1d_sin_cos_pos_embed(embed_dim, pos):
@@ -1385,63 +1289,295 @@ class Blip2Qformer(Blip2Base):
         pos = torch.cat([emb_y, emb_x], dim=1)
         return pos.unsqueeze(0)  # [1, h*w, dim]
 
+
+
+    def make_block_mask(self, batch_size, H, W, block_size, mask_ratio, device):
+        """
+        Returns a bool mask of shape [B, H*W], where True = masked token.
+        Mask is made of random square blocks of size block_size x block_size.
+        """
+        mask = torch.zeros(batch_size, H, W, dtype=torch.bool, device=device)
+
+        # how many blocks per sample (rough approximation)
+        area = H * W
+        block_area = block_size * block_size
+        num_blocks = max(1, int(mask_ratio * area / block_area))
+
+        for b in range(batch_size):
+            for _ in range(num_blocks):
+                y0 = torch.randint(0, max(1, H - block_size + 1), (1,), device=device).item()
+                x0 = torch.randint(0, max(1, W - block_size + 1), (1,), device=device).item()
+                mask[b, y0:y0+block_size, x0:x0+block_size] = True
+
+        return mask.view(batch_size, -1)  # [B, H*W]
+
+
+
     def forward(self, samples, is_train=True):
-        image = samples["cam_bev"]      # [B, 256, H, W]
-        lidar = samples["lidar_bev"]    # [B, 256, H, W]
+        # TEMP SAVE TEST (remove later)
+        # print("hhhhhhhhhhhhhhhhhhhhhhhhhhh")
+        save_dir = "/home/draiman/Desktop/debug_cam_features"
+        os.makedirs(save_dir, exist_ok=True)
+        test_path = os.path.join(save_dir, "test_save.pt")
+        torch.save(torch.tensor([1,2,3]), test_path)
+
+        # -------------------------------------
+        # 1. Load BEV feature maps [B, C, H, W]
+        # -------------------------------------
+        image = samples["cam_bev"]       # [B, 256, H, W]
+        lidar = samples["lidar_bev"]     # [B, 256, H, W]
         bs, c, H, W = image.shape
 
-        # 1. (optional projection)
-        rgb_proj   = image      # [B, D, H, W]
-        lidar_proj = lidar      # [B, D, H, W]
 
-        # 2. Flatten to tokens
-        rgb_tokens_raw   = self.rgb_layernorm(rgb_proj.flatten(2).transpose(1, 2))
-        lidar_tokens_raw = self.lidar_layernorm(lidar_proj.flatten(2).transpose(1, 2))
+        
+        
 
-        # 3. Positional encoding addition (applied to both)
+        # First sample only (to avoid massive files)
+        lidar_feat_to_save = lidar[0].detach().cpu()
+
+        save_path = os.path.join(save_dir, "lidar_features.pt")
+        torch.save(lidar_feat_to_save, save_path)
+
+        # First sample only (to avoid massive files)
+        cam_feat_to_save = image[0].detach().cpu()
+
+        save_path = os.path.join(save_dir, "cam_features.pt")
+        torch.save(cam_feat_to_save, save_path)
+
+
+        print(f"[DEBUG] Saved camera & lidar BEV features to: {save_path}")
+        # ==========================================
+
+
+        # -------------------------------------
+        # 2. Flatten into tokens -> [B, N, D]
+        # -------------------------------------
+        # raw features (before positional encoding)
+        rgb_feat_raw   = image.flatten(2).transpose(1, 2)     # [B, N, D]
+        lidar_feat_raw = lidar.flatten(2).transpose(1, 2)     # [B, N, D]
+
+        # layernorm the raw features
+        rgb_tokens_raw   = self.rgb_layernorm(rgb_feat_raw)
+        lidar_tokens_raw = self.lidar_layernorm(lidar_feat_raw)
+
+        N = rgb_tokens_raw.size(1)
+
+        # -------------------------------------
+        # 3. Add 2D positional embedding
+        # -------------------------------------
         if self._cached_pos is None or self._cached_pos.shape[1] != H * W:
             self._cached_pos = self._build_2d_sincos_pos_embed(
                 H, W, rgb_tokens_raw.size(-1), rgb_tokens_raw.device
             )
-        pos_embed = self._cached_pos.to(rgb_tokens_raw.device)
-        rgb_tokens = rgb_tokens_raw + pos_embed   
+        pos_embed = self._cached_pos.to(rgb_tokens_raw.device)   # [1, N, D]
+
+        rgb_tokens   = rgb_tokens_raw   + pos_embed
         lidar_tokens = lidar_tokens_raw + pos_embed
 
-        # 4. Run 4 fusion layers
-        cam_out, lid_out = rgb_tokens, lidar_tokens
+        # -------------------------------------
+        # 4. No masking in the baseline
+        # -------------------------------------
+        cam_mask = None
+        lidar_mask = None
+
+        # -------------------------------------
+        # 5. Run ONLY self-attention layers
+        # -------------------------------------
         def fusion_stack(cam_in, lid_in):
             for layer in self.fusion_layers:
-                cam_in, lid_in = layer(cam_in, lid_in)
+                # self-attention only (cross-attn removed inside FusionBlock)
+                cam_in, lid_in = layer(cam_in, lid_in, cam_mask, lidar_mask)
             return cam_in, lid_in
 
         if self.use_grad_checkpoint and is_train:
             cam_out, lid_out = checkpoint(
-                fusion_stack, cam_out, lid_out, use_reentrant=False
+                fusion_stack, rgb_tokens, lidar_tokens, use_reentrant=False
             )
         else:
-            cam_out, lid_out = fusion_stack(cam_out, lid_out)
+            cam_out, lid_out = fusion_stack(rgb_tokens, lidar_tokens)
 
-        # 5. Cross-reconstruction heads
-        lidar_rec = self.lidar_proj(cam_out)
-        cam_rec   = self.vision_proj(lid_out)
+        # -------------------------------------
+        # 6. Feature reconstruction heads
+        # -------------------------------------
+        # Project back to original feature dimension
+        lidar_rec = self.lidar_proj(lid_out)  # LiDAR reconstructs LiDAR features
+        cam_rec   = self.vision_proj(cam_out) # Camera reconstructs camera features
 
-        # 6. Discrepancy maps (element-wise L1 loss for each token)
-        lid_discrepancy_map = (lidar_rec - lidar_tokens_raw).abs().mean(-1)
-        cam_discrepancy_map = (cam_rec - rgb_tokens_raw).abs().mean(-1)
+        # -------------------------------------
+        # 7. Reconstruction loss: MSE on FEATURES
+        # -------------------------------------
+        mse = torch.nn.MSELoss()
 
-        # 7. Scalar losses (mean over all tokens and batch, for training)
-        L_cross_lid = lid_discrepancy_map.mean()
-        L_cross_cam = cam_discrepancy_map.mean()
-        total_loss = L_cross_lid + L_cross_cam
+        L_recon_lidar = mse(lidar_rec, lidar_feat_raw)   # LiDAR → LiDAR
+        L_recon_cam   = mse(cam_rec, rgb_feat_raw)       # Camera → Camera
 
+        total_loss = L_recon_lidar + L_recon_cam
+
+
+
+
+
+
+
+    # ================================
+    # DEBUG PRINT (only first iter/epoch)
+    # ================================
+
+        def stats(name, x):
+            print(f"[STATS] {name}: min={x.min().item():.4f}, "
+                f"max={x.max().item():.4f}, "
+                f"mean={x.mean().item():.4f}, "
+                f"std={x.std().item():.4f}")
+
+        print("\n" + "="*80)
+        print("[DEBUG] Feature Reconstruction Check")
+
+        # ---- shapes ----
+        print("[SHAPES]")
+        print("  cam_rec:", cam_rec.shape)
+        print("  cam_raw:", rgb_feat_raw.shape)
+        print("  lidar_rec:", lidar_rec.shape)
+        print("  lidar_raw:", lidar_feat_raw.shape)
+
+
+
+        
+        # # Choose save directory
+        # save_dir = "/home/draiman/Desktop/debug_cam_features"
+        # os.makedirs(save_dir, exist_ok=True)
+        # save_path = os.path.join(save_dir, f"cam_features.pt")
+
+
+
+        # ---- first 5 tokens × first 5 dims ----
+        print("\n[CAMERA RAW (first 5 tokens × 5 dims)]")
+        print(rgb_feat_raw[0, :5, :5])
+
+        print("\n[CAMERA REC (first 5 tokens × 5 dims)]")
+        print(cam_rec[0, :5, :5])
+
+        print("\n[LIDAR RAW (first 5 tokens × 5 dims)]")
+        print(lidar_feat_raw[0, :5, :5])
+
+        print("\n[LIDAR REC (first 5 tokens × 5 dims)]")
+        print(lidar_rec[0, :5, :5])
+
+        # ---- per-token MAE ----
+        cam_mae = (cam_rec[0] - rgb_feat_raw[0]).abs().mean(dim=-1)
+        lid_mae = (lidar_rec[0] - lidar_feat_raw[0]).abs().mean(dim=-1)
+
+        print("\n[Per-token MAE CAMERA (first 10 tokens)]")
+        print(cam_mae[:10])
+
+        print("\n[Per-token MAE LIDAR (first 10 tokens)]")
+        print(lid_mae[:10])
+
+        # ---- stats ----
+        print("\n[STATISTICS]")
+        stats("cam_raw", rgb_feat_raw[0])
+        stats("cam_rec", cam_rec[0])
+        stats("lidar_raw", lidar_feat_raw[0])
+        stats("lidar_rec", lidar_rec[0])
+
+        print("="*80 + "\n")
+    # ================================
+
+
+
+
+
+
+
+
+        # -------------------------------------
+        # 8. Return clean dictionary
+        # -------------------------------------
         return {
             "loss": total_loss.view(1),
-            "L_cross_lid": L_cross_lid.detach(),
-            "L_cross_cam": L_cross_cam.detach(),
-            # "lid_discrepancy_map": lid_discrepancy_map.detach(),
-            # "cam_discrepancy_map": cam_discrepancy_map.detach(),
+            "L_recon_lidar": L_recon_lidar.detach(),
+            "L_recon_cam": L_recon_cam.detach(),
         }
 
+
+    @torch.no_grad()
+    def forward_features(self, samples, return_maps=False):
+        print(">>> Using forward_features()  <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+        return_maps=True
+        """
+        Evaluation / testing forward:
+        - NO gradient checkpointing
+        - NO training loss
+        - Returns discrepancy maps + scalar scores you can threshold / log.
+
+        Args:
+            samples: dict with
+                samples["cam_bev"]   -> [B, D, H, W]
+                samples["lidar_bev"] -> [B, D, H, W]
+            return_maps (bool):
+                If True, also return [B, H, W] discrepancy maps.
+
+        Returns:
+            dict with keys:
+                "L_cross_lid" : scalar tensor (mean L1 recon error for LiDAR)
+                "L_cross_cam" : scalar tensor (mean L1 recon error for camera)
+                "lid_discrepancy_map": [B, H, W] (if return_maps)
+                "cam_discrepancy_map": [B, H, W] (if return_maps)
+                "cam_tokens":  [B, H*W, D] fused camera tokens
+                "lid_tokens":  [B, H*W, D] fused lidar tokens
+        """
+        image = samples["cam_bev"]      # [B, D, H, W]
+        lidar = samples["lidar_bev"]    # [B, D, H, W]
+        bs, c, H, W = image.shape
+
+        # 1. (optional projection) – here you use BEV features directly
+        rgb_proj   = image      # [B, D, H, W]
+        lidar_proj = lidar      # [B, D, H, W]
+
+        # 2. Flatten to tokens + LayerNorm
+        rgb_tokens_raw   = self.rgb_layernorm(rgb_proj.flatten(2).transpose(1, 2))   # [B, H*W, D]
+        lidar_tokens_raw = self.lidar_layernorm(lidar_proj.flatten(2).transpose(1, 2))  # [B, H*W, D]
+
+        # 3. Positional encoding (same as in forward)
+        if self._cached_pos is None or self._cached_pos.shape[1] != H * W:
+            self._cached_pos = self._build_2d_sincos_pos_embed(
+                H, W, rgb_tokens_raw.size(-1), rgb_tokens_raw.device
+            )
+        pos_embed = self._cached_pos.to(rgb_tokens_raw.device)   # [1, H*W, D]
+
+        rgb_tokens   = rgb_tokens_raw + pos_embed
+        lidar_tokens = lidar_tokens_raw + pos_embed
+
+        # 4. Run fusion stack (NO checkpointing in eval)
+        cam_out, lid_out = rgb_tokens, lidar_tokens
+        for layer in self.fusion_layers:
+            cam_out, lid_out = layer(cam_out, lid_out)   # [B, H*W, D] each
+
+        # 5. Cross-reconstruction heads
+        lidar_rec = self.lidar_proj(cam_out)   # [B, H*W, embed_dim]
+        cam_rec   = self.vision_proj(lid_out)  # [B, H*W, embed_dim]
+
+        # 6. Discrepancy maps (per-token L1)
+        lid_discrepancy_map_flat = (lidar_rec - lidar_tokens_raw).abs().mean(-1)  # [B, H*W]
+        cam_discrepancy_map_flat = (cam_rec   - rgb_tokens_raw  ).abs().mean(-1)  # [B, H*W]
+
+        # 7. Scalar scores (mean over tokens)
+        L_cross_lid = lid_discrepancy_map_flat.mean()  # scalar
+        L_cross_cam = cam_discrepancy_map_flat.mean()  # scalar
+
+        out = {
+            "L_cross_lid": L_cross_lid,
+            "L_cross_cam": L_cross_cam,
+            "cam_tokens": cam_out,     # [B, H*W, D]
+            "lid_tokens": lid_out,     # [B, H*W, D]
+        }
+
+        if return_maps:
+            lid_discrepancy_map = lid_discrepancy_map_flat.view(bs, H, W)  # [B, H, W]
+            cam_discrepancy_map = cam_discrepancy_map_flat.view(bs, H, W)  # [B, H, W]
+            out["lid_discrepancy_map"] = lid_discrepancy_map
+            out["cam_discrepancy_map"] = cam_discrepancy_map
+
+        return out
 
 
     @classmethod
@@ -1495,100 +1631,28 @@ class Blip2Qformer(Blip2Base):
 
 
 
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# import math
-
-# # -------------------------------
-# # Relative Position Bias Module
-# # -------------------------------
-# class Blip2Qformer(nn.Module):
-#     def __init__(self, num_heads, window_size):
-#         """
-#         window_size: tuple (H, W) for BEV grid
-#         num_heads: number of attention heads
-#         """
-#         super().__init__()
-#         self.num_heads = num_heads
-#         self.window_size = window_size
-#         # bias table: (2*H-1)*(2*W-1), each entry for a relative offset
-#         self.bias_table = nn.Parameter(
-#             torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
-#         )
-#         # coordinate index map
-#         coords = torch.stack(torch.meshgrid(
-#             torch.arange(window_size[0]), torch.arange(window_size[1]), indexing="ij"
-#         ))  # [2, H, W]
-#         coords_flat = coords.flatten(1)  # [2, H*W]
-#         rel_coords = coords_flat[:, :, None] - coords_flat[:, None, :]  # [2, H*W, H*W]
-#         rel_coords = rel_coords.permute(1, 2, 0).contiguous()
-#         rel_coords[:, :, 0] += window_size[0] - 1
-#         rel_coords[:, :, 1] += window_size[1] - 1
-#         rel_coords[:, :, 0] *= 2 * window_size[1] - 1
-#         self.register_buffer("relative_position_index", rel_coords.sum(-1))
-#         nn.init.trunc_normal_(self.bias_table, std=0.02)
-
-#     PRETRAINED_MODEL_CONFIG_DICT = {
-#         "pretrain": "configs/models/blip2/blip2_pretrain.yaml",
-#         "pretrain_vitL": "configs/models/blip2/blip2_pretrain_vitL.yaml",
-#         "coco": "configs/models/blip2/blip2_coco.yaml",
-#         "pretrain_qformer": "configs/models/blip2/blip2_pretrain_qformer.yaml",
-#     }
-
-#     def __init__(
-#         self,
-#         vit_model=None,
-#         img_size=256,
-#         drop_path_rate=0,
-#         use_grad_checkpoint=False,
-#         vit_precision="fp16",
-#         freeze_vit=True,
-#         num_query_token=32,
-#         cross_attention_freq=1,
-#         embed_dim=256,
-#         max_txt_len=32,):
-#         super().__init__()
-
-#         # hidden_dim = 768
-#         hidden_dim = 256
-#         self.rgb_input_proj = self.init_feature_projection(in_dim=2048, out_dim=hidden_dim) # resnet
-#         # self.rgb_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim) # fpn
-#         self.lidar_input_proj = self.init_feature_projection(in_dim=256, out_dim=hidden_dim)
-        
-#         self.rgb_layernorm = nn.LayerNorm(hidden_dim)
-#         self.lidar_layernorm = nn.LayerNorm(hidden_dim)
-
-#         self.Qformer, self.query_tokens = self.init_Qformer(num_query_token, hidden_dim, cross_attention_freq)
-#         qformer_lidar, query_tokens_lidar = self.init_Qformer(num_query_token, hidden_dim, cross_attention_freq)
-#         self.Qformer_lidar = qformer_lidar
-#         self.query_tokens_lidar = nn.Parameter(query_tokens_lidar.data.clone())
-#         self.register_parameter("query_tokens_lidar", self.query_tokens_lidar)
-
-#         self.vision_proj = nn.Linear(hidden_dim, embed_dim)
-#         self.lidar_proj = nn.Linear(hidden_dim, embed_dim)
-#         self.log_temp = nn.Parameter(torch.log(torch.tensor(0.1)))  # Learnable temp
-        
-#         self.temp = nn.Parameter(0.07 * torch.ones([]))
-#         self.dropout = nn.Dropout(p=0.1)
-
-#         # cache to avoid re-building sincos every forward if size doesn't change
-#         self._cached_rgb_hw   = None
-#         self._cached_rgb_pos  = None
-#         self._cached_lidar_hw = None
-#         self._cached_lidar_pos= None
-        
 
 
 
-#     def forward(self):
-#         # Return [num_heads, N, N] bias to add to attention logits
-#         relative_position_bias = self.bias_table[self.relative_position_index.view(-1)].view(
-#             self.window_size[0] * self.window_size[1],
-#             self.window_size[0] * self.window_size[1],
-#             -1,
-#         )  # [N, N, num_heads]
-#         return relative_position_bias.permute(2, 0, 1).contiguous()  # [num_heads, N, N]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # -------------------------------
@@ -1730,7 +1794,12 @@ def compute_total_loss(pred_cam, pred_lid, target_cam, target_lid, mask=None):
 
 
 
-
+# Main differences with previous version:
+# - no masking implemented yet
+# - changed: using L1 loss to using MAE
+# - changed: reconstruction heads to predict projected features instead of tokens
+# - changed: removed cross-attention and FFN from FusionBlock, only self-attention remains
+# - changed: fusion_layers from 2 layers to 4 layers
 
 
 

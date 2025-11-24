@@ -22,6 +22,9 @@ from torch.utils.data import DataLoader
 from torch.utils.data.dataset import ChainDataset
 from lavis.datasets.data_utils import prepare_sample
 import webdataset as wds
+import os
+import matplotlib.pyplot as plt
+
 from torch import autocast
 from lavis.common.dist_utils import (
     download_cached_file,
@@ -351,6 +354,7 @@ class RunnerBaseW:
                     print(f"[DEBUG] Evaluating on test split: {split_name}")
                     test_log = self.eval_epoch(split_name, cur_epoch)
                     if test_log and is_main_process():
+                        print("test_log", test_log)
                         self.log_stats(test_log, split_name)
 
                 #  Don't break until test is done
@@ -415,43 +419,6 @@ class RunnerBaseW:
 
         return raw_loss, loss_dict
 
-
-
-    def valid_step(self,config, model, samples):
-        model.eval()
-        samples = prepare_sample(samples, cuda_enabled=True)
-
-        retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
-        use_shuffled = getattr(config.run_cfg, "use_shuffled_validation", False)
-        use_amp = True
-
-        with torch.no_grad():
-            # with autocast("cuda", enabled=use_amp):
-            with torch.amp.autocast("cuda", enabled=use_amp):
-                if retrieval_eval:
-                    if use_shuffled:
-
-                        outputs = model.forward_features_shuffled(samples, shuffle_prob=0.5)
-                        return {"loss": None, "output": outputs}
-                    else:
-                    # Only extract embeddings for retrieval
-                        print("------------------------forward_features-------------------------")
-                        features = model.forward_features(samples)
-                        rgb_feats = features["rgb_feats"]
-                        lidar_feats = features["lidar_feats"]
-                        # print("[DEBUG] rgb_feats type:", type(rgb_feats), "shape:", rgb_feats.shape if isinstance(rgb_feats, torch.Tensor) else "N/A")
-                        # print("[DEBUG] lidar_feats type:", type(lidar_feats), "shape:", lidar_feats.shape if isinstance(lidar_feats, torch.Tensor) else "N/A")
-
-                        return {"loss": None, "output": {"rgb_feats": rgb_feats, "lidar_feats": lidar_feats}}
-                else:
-                    # Use standard forward that returns loss
-                    output = model(samples)
-                    print("output keys:", output.keys())
-                    # loss = output["loss"].item() if "loss" in output else None
-                    # return {"loss": loss, "output": output}
-                    return {k: (v.mean().item() if hasattr(v, "mean") else v.item()) for k, v in output.items()}
-                
-                
 
 
 
@@ -550,9 +517,88 @@ class RunnerBaseW:
 
 
 
+    # def valid_step(self,config, model, samples):
+    #     model.eval()
+    #     samples = prepare_sample(samples, cuda_enabled=True)
 
+    #     retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
+    #     use_shuffled = getattr(config.run_cfg, "use_shuffled_validation", False)
+    #     use_amp = True
 
+    #     with torch.no_grad():
+    #         # with autocast("cuda", enabled=use_amp):
+    #         with torch.amp.autocast("cuda", enabled=use_amp):
+    #             if retrieval_eval:
+    #                 if use_shuffled:
 
+    #                     outputs = model.forward_features_shuffled(samples, shuffle_prob=0.5)
+    #                     return {"loss": None, "output": outputs}
+    #                 else:
+    #                 # Only extract embeddings for retrieval
+    #                     print("------------------------forward_features-------------------------")
+    #                     features = model.forward_features(samples)
+    #                     rgb_feats = features["rgb_feats"]
+    #                     lidar_feats = features["lidar_feats"]
+    #                     # print("[DEBUG] rgb_feats type:", type(rgb_feats), "shape:", rgb_feats.shape if isinstance(rgb_feats, torch.Tensor) else "N/A")
+    #                     # print("[DEBUG] lidar_feats type:", type(lidar_feats), "shape:", lidar_feats.shape if isinstance(lidar_feats, torch.Tensor) else "N/A")
+
+    #                     return {"loss": None, "output": {"rgb_feats": rgb_feats, "lidar_feats": lidar_feats}}
+    #             else:
+    #                 # Use standard forward that returns loss
+    #                 output = model(samples)
+    #                 print("output keys:", output.keys())
+    #                 # loss = output["loss"].item() if "loss" in output else None
+    #                 # return {"loss": loss, "output": output}
+    #                 return {k: (v.mean().item() if hasattr(v, "mean") else v.item()) for k, v in output.items()}
+                
+
+    def valid_step(self, config, model, samples):
+        model.eval()
+        samples = prepare_sample(samples, cuda_enabled=True)
+
+        retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
+        use_shuffled = getattr(config.run_cfg, "use_shuffled_validation", False)
+        use_amp = True
+
+        with torch.no_grad():
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                if retrieval_eval:
+                    if use_shuffled:
+                        outputs = model.forward_features_shuffled(samples, shuffle_prob=0.5)
+                        return {"loss": None, "output": outputs}
+                    else:
+                        features = model.forward_features(samples, return_maps=True)
+                        rgb_feats = features.get("rgb_feats", None)
+                        lidar_feats = features.get("lidar_feats", None)
+
+                        output_dir = getattr(self, "output_dir", ".")
+                        os.makedirs(output_dir, exist_ok=True)
+
+                        # LiDAR map
+                        if "lid_discrepancy_map" in features:
+                            lid_map = features["lid_discrepancy_map"]
+                            fname = os.path.abspath(os.path.join(output_dir, "lidar_discrepancy_map.png"))
+                            plt.imsave(fname, lid_map[0].cpu().numpy())
+                            print(f"[INFO] Saved LiDAR heatmap to: {fname}")
+
+                        # Camera map
+                        if "cam_discrepancy_map" in features:
+                            cam_map = features["cam_discrepancy_map"]
+                            fname = os.path.abspath(os.path.join(output_dir, "camera_discrepancy_map.png"))
+                            plt.imsave(fname, cam_map[0].cpu().numpy())
+                            print(f"[INFO] Saved Camera heatmap to: {fname}")
+
+                        return {"loss": None, "output": {
+                            "rgb_feats": rgb_feats,
+                            "lidar_feats": lidar_feats,
+                            "lid_discrepancy_map": features.get("lid_discrepancy_map", None),
+                            "cam_discrepancy_map": features.get("cam_discrepancy_map", None),
+                        }}
+                else:
+                    output = model(samples)
+                    print("output keys:", output.keys())
+                    return {k: (v.mean().item() if hasattr(v, "mean") else v.item()) for k, v in output.items()}
+                
 
 # ================================================================
 # Evaluation 
@@ -772,56 +818,6 @@ class RunnerBaseW:
 
     @torch.no_grad()
     
-    # def evaluation(self, config, model, data_loader, cuda_enabled=True):
-    #     print("\n[DEBUG] Running EVALUATION")
-    #     header = "Evaluation"
-    #     print_freq = 10
-
-    #     total_loss = 0.0
-    #     num_batches = 0
-    #     all_outputs = []
-
-    #     retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
-
-    #     # Print actual dataset length
-    #     print(f"[DEBUG] Dataset size: {len(data_loader.dataset)}")
-        
-    #     for i, samples in enumerate(data_loader):
-    #         # if retrieval_eval and i >= 10:
-    #         #     break 
-    #         if i % print_freq == 0:
-    #             print(f"[DEBUG] {header} [{i}/{len(data_loader)}]")
-
-    #         samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
-    #         eval_output = self.valid_step(config, model=model, samples=samples)
-    #         if retrieval_eval:
-    #             all_outputs.append(eval_output)  # raw features
-    #         else:
-    #             loss = eval_output.get("loss", None)
-    #             output = eval_output.get("output", None)
-    #             if loss is not None:
-    #                 total_loss += loss
-    #             all_outputs.append(output)
-
-    #         num_batches += 1
-
-    #     print(f"[DEBUG] Completed batches: {num_batches}")
-
-    #     if retrieval_eval:
-    #         # print("-----------------------------------------retrieval_eval---------------------------------------------------------------")
-    #         return {
-    #             "output": all_outputs  # for computing Recall@K etc.
-    #         }
-    #     else:
-    #         avg_loss = total_loss / max(num_batches, 1)
-    #         return {
-    #             "loss": avg_loss,
-    #             "output": all_outputs,
-    #         }
-
-
-
-
     def evaluation(self, config, model, data_loader, cuda_enabled=True):
         print("\n[DEBUG] Running EVALUATION")
         header = "Evaluation"
@@ -876,7 +872,7 @@ class RunnerBaseW:
 
     def after_evaluation(self, config, val_result, split_name, epoch):
         # print("------------------------------------------------------------------------------------------------------------------------------")
-        print("VAL_RESULT DICT:", val_result)
+        # print("VAL_RESULT DICT:", val_result['output'])
         """
         Process the results after evaluation.
 
@@ -905,8 +901,8 @@ class RunnerBaseW:
                 stats.update(val_result["metrics"])
 
             # If retrieval evaluation results were added
-            if "output" in val_result and config.run_cfg.get("retrieval_eval", False):
-                retrieval_metrics = self.compute_retrieval_metrics_from_outputs(val_result["output"])  # for all samples 
+            # if "output" in val_result and config.run_cfg.get("retrieval_eval", False):
+                # retrieval_metrics = self.compute_retrieval_metrics_from_outputs(val_result["output"])  # for all samples 
                 # retrieval_metrics = self.compute_batchwise_retrieval_metrics( # for bath by batch, then average batches 
                 #     val_result["output"],
                 #     top_k=(1, 5, 10),
