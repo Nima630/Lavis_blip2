@@ -23,14 +23,14 @@ datasets:
       train:
         name: "blip_caption"
     build_info:
-      metadata_csv: /home/draiman/Desktop/Datasets_nuscenes/nuscenes_metadata.csv
+      metadata_csv: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/final_resources/calib_trainval_front.csv
       bev:
-        x_min: -50.0
+        x_min: 0.0 #-50.0
         x_max: 50.0
-        cell_x: 0.5
-        y_min: -50.0
-        y_max: 50.0
-        cell_y: 0.5
+        cell_x: 0.4 # 0.5
+        y_min: -25.0  #-50.0
+        y_max: 25.0  #50.0
+        cell_y: 0.25 #0.5
       cam_proj:
         camera_name: CAM_FRONT   # which camera to use when querying metadata_df
         fpn_level: 0             # matches "{token}_lvl{fpn_level}.pt"
@@ -41,7 +41,7 @@ datasets:
       
       metadata_csv_train: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/data_read_nuscenes/nusc_train_metadata.csv
       metadata_csv_val: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/data_read_nuscenes/nusc_val_metadata.csv
-      metadata_csv_test: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/data_read_nuscenes/nusc_pseudo_test_metadata.csv  # optional
+      metadata_csv_test: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/data_read_nuscenes/nusc_val_metadata.csv  # optional
       
       annotations:
         camera:
@@ -59,81 +59,54 @@ datasets:
           test:
             storage: lavis/my_datasets/nuscenes_dataset/nuscenes_lidar_annotations_test.json
       
-      
-      # 
-      # camera:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/train/resnet/CAM_FRONT 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/resnet/CAM_FRONT 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/resnet/CAM_FRONT 
-
-      # lidar:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/train/lidar #_tiny
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar #_tiny
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar
-
-
-      # tiny
-
-
-      # # resnet
-      # camera:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/train/resnet/CAM_FRONT 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/resnet/CAM_FRONT 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/resnet/CAM_FRONT 
 
 
       # # fpn
-      # camera:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/train/fpn/CAM_FRONT 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/fpn/CAM_FRONT 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/fpn/CAM_FRONT 
-
-      # lidar:
-      #   train:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/train/lidar 
-      #   val:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/lidar 
-      #   test:
-      #     storage: lavis/my_datasets/Datasets_nuscenes_tiny/validation/lidar
-
-
-
-      # fpn
       camera:
         train:
-          storage: lavis/my_datasets/Datasets_nuscenes/train/fpn/CAM_FRONT 
+          storage: lavis/my_datasets/Datasets_nuscenes/train/fpn/CAM_FRONT
         val:
           storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT 
         test:
-          # storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT 
-          # storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn_cam_front_single_sample 
-          
-          # storage: lavis/my_datasets/Datasets_nuscenes/testing/features_benign/CAM_FRONT/fpn 
-          storage: lavis/my_datasets/Datasets_nuscenes/testing/features_cam_120/CAM_FRONT/fpn 
-          # storage: lavis/my_datasets/Datasets_nuscenes/testing/features_cam_40/CAM_FRONT/fpn"
-          
+          # storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT
+          storage: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/final_res_testing/initial_lidar_attack_test/features/benign/CAM_FRONT/fpn # this is already
+
 
       lidar:
         train:
-          storage: lavis/my_datasets/Datasets_nuscenes/train/lidar 
+          storage: /data/nusc_lidar/train
         val:
-          storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar 
+          storage: /data/nusc_lidar/validation
         test:
-        #   storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar
-          storage: lavis/my_datasets/Datasets_nuscenes/testing/features_benign/lidar
-          # storage: lavis/my_datasets/Datasets_nuscenes/testing/features_lidar_drop
+          storage: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/final_res_testing/initial_lidar_attack_test/features/benign/LIDAR_TOP
+          # storage: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/final_res_testing/initial_lidar_attack_test/features/attack/LIDAR_TOP
+          # storage: /home/draiman/Desktop/lidar_dataset/test/lidar  # later tests 
+
+
+
+
+    # # Tiny
+
+    #   # fpn
+    #   camera:
+    #     train:
+    #       storage: /data/nusc_tiny/train/fpn/CAM_FRONT
+    #     val:
+    #       storage: /data/nusc_tiny/validation/fpn/CAM_FRONT
+    #     test:
+    #       storage: /data/nusc_tiny/validation/fpn/CAM_FRONT
+
+    #   lidar:
+    #     train:
+    #       storage: /data/nusc_tiny/train/lidar
+    #     val:
+    #       storage: /data/nusc_tiny/validation/lidar
+    #     test:
+    #       storage: /data/nusc_tiny/validation/lidar
+
+
+
+
 
         # test:
         
@@ -156,8 +129,8 @@ datasets:
 
 
 run:
-  retrieval_eval: false #true
-  # retrieval_eval: true
+  # retrieval_eval: false #true
+  retrieval_eval: true
   use_shuffled_validation: false #true
   # use_batchwise_metrics: false
   task: nuscenes_captioning  # <- custom task if you register it
@@ -168,7 +141,7 @@ run:
   warmup_lr: 1e-6
   # lr_layer_decay: 0.9 # uncomment this which not useing linear_warmup_cosine_lr
   weight_decay: 0.05
-  max_epoch: 200 # 20
+  max_epoch: 1 #200 # 20
   val_freq: 20 # evaluate every n epochs
   save_freq: 20 # n epochs (not used for now)
   batch_size_train: 1 #64 # 16
@@ -177,13 +150,11 @@ run:
   accum_grad_iters: 8 # batch_size_train x accum_grad_iters = effective batch size 
   warmup_steps: 4 #50 #20 #5
   seed: 42
-  # output_dir: "output/BLIP2_test/CAM_FRONT_Qform_mini_new_checkpointing_copy_no_mask/"
-  output_dir: "output/BLIP2_test/comparison/cam_occ_expanded_120"   # lidar_attacked, cam_attacked, benign
-  # output_dir: "output/BLIP2_test/mini_learnable_position_added/"
+  output_dir: "output/BLIP2_test/CAM_FRONT_Qform_mini_Adn_1_debug_1/benign"   # lidar_attacked, cam_attacked, benign
+  # output_dir: "output/BLIP2_test/CAM_FRONT_Qform_mini_Adn_1_debug_1/attack"   # lidar_attacked, cam_attacked, benign
   amp:  true
   # only uncommented when resuming traning or when evaluate only (to only evaluate, set evaluate to true)
-  resume_ckpt_path: "lavis/output/BLIP2/CAM_FRONT_Qform_mini_new_checkpointing_copy_no_mask/20251102215/checkpoint_best.pth" 
-  # resume_ckpt_path: "lavis/output/BLIP2/CAM_FRONT_Qform_mini_new_checkpointing_with_mask/20251108170/checkpoint_best.pth" 
+  resume_ckpt_path: "lavis/output/BLIP2/CAM_FRONT_Qform_mini_Adn_1_debug_1/20251129180/checkpoint_best.pth" 
   
   evaluate: true
   train_splits: [] #["train"]

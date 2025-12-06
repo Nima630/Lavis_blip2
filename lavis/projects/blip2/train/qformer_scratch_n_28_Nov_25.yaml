@@ -1,0 +1,113 @@
+model:
+  # arch: blip2
+  load_finetuned: false
+  model_type: blip2_pretrain_qformer_n  # <- custom model file (e.g., blip2_qformer_w.py)
+  load_pretrained: False
+  freeze_vit: True
+  vit_model: eva_clip_g
+  vit_precision: fp16
+  image_size: 224
+  max_txt_len: 8 #32
+  use_grad_checkpoint: True
+  num_query_token: 32
+
+# Custom nuscenes dataset config
+datasets:
+  nuscenes:
+    data_type: [camera, lidar]
+    vis_processor:
+      train:
+        name: "blip2_image_train"
+        image_size: 224
+    text_processor:
+      train:
+        name: "blip_caption"
+    build_info:
+      metadata_csv: /home/draiman/Desktop/Datasets_nuscenes/nuscenes_metadata.csv
+      bev:
+        x_min: -50.0
+        x_max: 50.0
+        cell_x: 0.5
+        y_min: -50.0
+        y_max: 50.0
+        cell_y: 0.5
+      cam_proj:
+        camera_name: CAM_FRONT   # which camera to use when querying metadata_df
+        fpn_level: 0             # matches "{token}_lvl{fpn_level}.pt"
+        stride: 8                # stride used in pixel_centers() for that FPN level
+      lidar_proj:
+        pc_range: [-54,-54,-5,54,54,3]
+      
+      
+      metadata_csv_train: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/data_read_nuscenes/nusc_train_metadata.csv
+      metadata_csv_val: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/data_read_nuscenes/nusc_val_metadata.csv
+      metadata_csv_test: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/data_read_nuscenes/nusc_val_metadata.csv  # optional
+      
+      annotations:
+        camera:
+          train:
+            storage: lavis/my_datasets/nuscenes_dataset/nuscenes_camera_annotations_train.json
+          val:
+            storage: lavis/my_datasets/nuscenes_dataset/nuscenes_camera_annotations_val.json
+          test:
+            storage: lavis/my_datasets/nuscenes_dataset/nuscenes_camera_annotations_test.json
+        lidar:
+          train:
+            storage: lavis/my_datasets/nuscenes_dataset/nuscenes_lidar_annotations_train.json
+          val:
+            storage: lavis/my_datasets/nuscenes_dataset/nuscenes_lidar_annotations_val.json
+          test:
+            storage: lavis/my_datasets/nuscenes_dataset/nuscenes_lidar_annotations_test.json
+      
+
+
+      # fpn
+      camera:
+        train:
+          storage: lavis/my_datasets/Datasets_nuscenes/train/fpn/CAM_FRONT 
+        val:
+          storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT 
+        test:
+          storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT 
+
+      lidar:
+        train:
+          storage: lavis/my_datasets/Datasets_nuscenes/train/lidar 
+        val:
+          storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar 
+        test:
+          storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar
+
+
+
+run:
+  retrieval_eval: false 
+  task: nuscenes_captioning  # <- custom task if you register it
+  lr_sched: "linear_warmup_cosine_lr" #   linear_warmup_step_lr
+  # lr_decay_rate: 0.9 
+  init_lr: 1e-4
+  min_lr: 1e-6
+  warmup_lr: 1e-6
+  # lr_layer_decay: 0.9 # uncomment this which not useing linear_warmup_cosine_lr
+  weight_decay: 0.05
+  max_epoch: 1 #200 #500 
+  val_freq: 0 #2 # evaluate every n epochs
+  save_freq: 2 # n epochs (not used for now)
+  batch_size_train:  1 #8 #32
+  batch_size_eval: 1 #8
+  num_workers: 0 #4
+  accum_grad_iters: 8 # batch_size_train x accum_grad_iters = effective batch size 
+  warmup_steps: 4 #50 #20 #5
+  seed: 42
+  output_dir: "output/BLIP2/CAM_FRONT_Qform_mini_Adn_1_debug"
+  amp:  true 
+  # resume_ckpt_path: "lavis/output/BLIP2/CAM_FRONT_Qform_mini_Adn_1/....../checkpoint_best.pth"  # only uncommented when resuming traning or when evaluate only (to only evaluate, set evaluate to true)
+  use_shuffled_validation: false 
+  evaluate: false
+  train_splits: ["train"]
+  valid_splits: ["val"]     
+  test_splits: [] #["test"]     
+  device: "cuda"
+  world_size: 1 # 2 number of gpu used 
+  dist_url: "env://"
+  distributed: false # true

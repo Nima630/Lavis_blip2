@@ -23,14 +23,14 @@ datasets:
       train:
         name: "blip_caption"
     build_info:
-      metadata_csv: /home/draiman/Desktop/Datasets_nuscenes/nuscenes_metadata.csv
+      metadata_csv: /home/draiman/Desktop/Nima/Lavis_blip2/lavis/New_Model/final_resources/calib_trainval_front.csv
       bev:
-        x_min: -50.0
+        x_min: 0.0 #-50.0
         x_max: 50.0
-        cell_x: 0.5
-        y_min: -50.0
-        y_max: 50.0
-        cell_y: 0.5
+        cell_x: 0.4 # 0.5
+        y_min: -25.0  #-50.0
+        y_max: 25.0  #50.0
+        cell_y: 0.25 #0.5
       cam_proj:
         camera_name: CAM_FRONT   # which camera to use when querying metadata_df
         fpn_level: 0             # matches "{token}_lvl{fpn_level}.pt"
@@ -61,22 +61,44 @@ datasets:
       
 
 
-      # fpn
+      # # fpn
       camera:
         train:
-          storage: lavis/my_datasets/Datasets_nuscenes/train/fpn/CAM_FRONT 
+          storage: lavis/my_datasets/Datasets_nuscenes/train/fpn/CAM_FRONT
         val:
           storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT 
         test:
-          storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT 
+          storage: lavis/my_datasets/Datasets_nuscenes/validation/fpn/CAM_FRONT
 
       lidar:
         train:
-          storage: lavis/my_datasets/Datasets_nuscenes/train/lidar 
+          storage: /data/nusc_lidar/train
         val:
-          storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar 
+          storage: /data/nusc_lidar/validation
         test:
-          storage: lavis/my_datasets/Datasets_nuscenes/validation/lidar
+          storage: /data/nusc_lidar/validation/lidar
+
+
+
+
+    # # Tiny
+
+      # # fpn
+      # camera:
+      #   train:
+      #     storage: /data/nusc_tiny/train/fpn/CAM_FRONT
+      #   val:
+      #     storage: /data/nusc_tiny/validation/fpn/CAM_FRONT
+      #   test:
+      #     storage: /data/nusc_tiny/validation/fpn/CAM_FRONT
+
+      # lidar:
+      #   train:
+      #     storage: /data/nusc_tiny/train/lidar
+      #   val:
+      #     storage: /data/nusc_tiny/validation/lidar
+      #   test:
+      #     storage: /data/nusc_tiny/validation/lidar
 
 
 
@@ -90,16 +112,16 @@ run:
   warmup_lr: 1e-6
   # lr_layer_decay: 0.9 # uncomment this which not useing linear_warmup_cosine_lr
   weight_decay: 0.05
-  max_epoch: 1 #200 #500 
-  val_freq: 0 #2 # evaluate every n epochs
-  save_freq: 2 # n epochs (not used for now)
-  batch_size_train:  1 #8 #32
-  batch_size_eval: 1 #8
-  num_workers: 0 #4
-  accum_grad_iters: 8 # batch_size_train x accum_grad_iters = effective batch size 
+  max_epoch: 200 #500 
+  val_freq: 1 #2 # evaluate every n epochs
+  save_freq: 1 # n epochs (not used for now)
+  batch_size_train: 8 #32
+  batch_size_eval: 8
+  num_workers: 4
+  accum_grad_iters: 4 # batch_size_train x accum_grad_iters = effective batch size 
   warmup_steps: 4 #50 #20 #5
   seed: 42
-  output_dir: "output/BLIP2/CAM_FRONT_Qform_mini_Adn_1_debug"
+  output_dir: "output/Train/Ccode_2"
   amp:  true 
   # resume_ckpt_path: "lavis/output/BLIP2/CAM_FRONT_Qform_mini_Adn_1/....../checkpoint_best.pth"  # only uncommented when resuming traning or when evaluate only (to only evaluate, set evaluate to true)
   use_shuffled_validation: false 
@@ -108,6 +130,6 @@ run:
   valid_splits: ["val"]     
   test_splits: [] #["test"]     
   device: "cuda"
-  world_size: 1 # 2 number of gpu used 
+  world_size: 2 #number of gpu used 
   dist_url: "env://"
   distributed: false # true

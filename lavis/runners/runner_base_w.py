@@ -262,11 +262,16 @@ class RunnerBaseW:
 
     def _load_checkpoint(self, path):
         checkpoint = torch.load(path, map_location=self.device)
-        self.unwrap_dist_model(self.model).load_state_dict(checkpoint["model"], strict=False)
-        self.optimizer.load_state_dict(checkpoint["optimizer"])
-        if self.scaler and "scaler" in checkpoint:
-            self.scaler.load_state_dict(checkpoint["scaler"])
-        self.start_epoch = checkpoint["epoch"] + 1
+        self.unwrap_dist_model(self.model).load_state_dict(checkpoint["model"], strict=False)        
+        # Optimizer + scaler only needed if training, not eval
+        if not self.evaluate_only:
+            self.optimizer.load_state_dict(checkpoint["optimizer"])
+            if self.scaler and "scaler" in checkpoint:
+                self.scaler.load_state_dict(checkpoint["scaler"])
+            self.start_epoch = checkpoint["epoch"] + 1
+        else:
+            # evaluation-only mode: ignore checkpoint epoch
+            self.start_epoch = 0
 
     @main_process
     def log_stats(self, stats, split_name):
@@ -293,8 +298,6 @@ class RunnerBaseW:
 
 
 
-
-
     def build_model(self, cfg):
         model_config = cfg.model_cfg
         model_cls = registry.get_model_class(model_config.arch)
@@ -314,7 +317,6 @@ class RunnerBaseW:
 
         # print(">>> [DEBUG] Built datasets keys:", datasets.keys())
         return datasets
-
 
 
 
@@ -363,7 +365,6 @@ class RunnerBaseW:
         if not os.path.exists(os.path.join(self.output_dir, "checkpoint_best.pth")) and not self.evaluate_only:
             self._save_checkpoint(cur_epoch, is_best=True)
 
-
     def train_epoch(self, epoch):
         self.model.train()
 
@@ -386,9 +387,9 @@ class RunnerBaseW:
 
 
 
-
     @torch.no_grad()
     def eval_epoch(self, split_name, cur_epoch, skip_reload=False):
+        print("eval_epoch")
         data_loader = self.dataloaders.get(split_name, None)
         assert data_loader, f"DataLoader for split {split_name} is None."
         model = self.unwrap_dist_model(self.model)
@@ -418,8 +419,6 @@ class RunnerBaseW:
         loss_dict = {k: v.mean().item() if hasattr(v, "ndim") and v.ndim > 0 else v.item() for k, v in output.items() if k.startswith("L_") or "loss" in k}
 
         return raw_loss, loss_dict
-
-
 
 
 
@@ -455,7 +454,6 @@ class RunnerBaseW:
             if i >= iters_per_epoch:
                 break
 
-            # samples = next(data_loader)
             if hasattr(data_loader, "next"):
                 samples = data_loader.next()
             else:
@@ -482,8 +480,8 @@ class RunnerBaseW:
             if i % 50 == 0: 
                 print(f"[DEBUG] Step {i}, LR: {optimizer.param_groups[0]['lr']:.8f}")
 
-            # samples
-            # bsz = samples['image'].size(0)
+            
+            
             bsz = samples['cam_bev'].size(0)
             # with torch.cuda.amp.autocast(enabled=use_amp):
             with torch.amp.autocast("cuda", enabled=use_amp):
@@ -515,306 +513,112 @@ class RunnerBaseW:
             for k, meter in metric_logger.meters.items()
         }
 
-
-
-    # def valid_step(self,config, model, samples):
-    #     model.eval()
-    #     samples = prepare_sample(samples, cuda_enabled=True)
-
-    #     retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
-    #     use_shuffled = getattr(config.run_cfg, "use_shuffled_validation", False)
-    #     use_amp = True
-
-    #     with torch.no_grad():
-    #         # with autocast("cuda", enabled=use_amp):
-    #         with torch.amp.autocast("cuda", enabled=use_amp):
-    #             if retrieval_eval:
-    #                 if use_shuffled:
-
-    #                     outputs = model.forward_features_shuffled(samples, shuffle_prob=0.5)
-    #                     return {"loss": None, "output": outputs}
-    #                 else:
-    #                 # Only extract embeddings for retrieval
-    #                     print("------------------------forward_features-------------------------")
-    #                     features = model.forward_features(samples)
-    #                     rgb_feats = features["rgb_feats"]
-    #                     lidar_feats = features["lidar_feats"]
-    #                     # print("[DEBUG] rgb_feats type:", type(rgb_feats), "shape:", rgb_feats.shape if isinstance(rgb_feats, torch.Tensor) else "N/A")
-    #                     # print("[DEBUG] lidar_feats type:", type(lidar_feats), "shape:", lidar_feats.shape if isinstance(lidar_feats, torch.Tensor) else "N/A")
-
-    #                     return {"loss": None, "output": {"rgb_feats": rgb_feats, "lidar_feats": lidar_feats}}
-    #             else:
-    #                 # Use standard forward that returns loss
-    #                 output = model(samples)
-    #                 print("output keys:", output.keys())
-    #                 # loss = output["loss"].item() if "loss" in output else None
-    #                 # return {"loss": loss, "output": output}
-    #                 return {k: (v.mean().item() if hasattr(v, "mean") else v.item()) for k, v in output.items()}
-                
-
+            
     def valid_step(self, config, model, samples):
         model.eval()
         samples = prepare_sample(samples, cuda_enabled=True)
-
         retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
-        use_shuffled = getattr(config.run_cfg, "use_shuffled_validation", False)
         use_amp = True
 
         with torch.no_grad():
             with torch.amp.autocast("cuda", enabled=use_amp):
                 if retrieval_eval:
-                    if use_shuffled:
-                        outputs = model.forward_features_shuffled(samples, shuffle_prob=0.5)
-                        return {"loss": None, "output": outputs}
-                    else:
-                        features = model.forward_features(samples, return_maps=True)
-                        rgb_feats = features.get("rgb_feats", None)
-                        lidar_feats = features.get("lidar_feats", None)
+                    preds = model.forward_features(samples, return_maps=True)
+                     # -------------------------------------------------------
+                    # SAVE DISCREPANCY MAPS into result/ directory
+                    # -------------------------------------------------------
+                    result_dir = self.result_dir
+                    os.makedirs(result_dir, exist_ok=True)
 
-                        output_dir = getattr(self, "output_dir", ".")
-                        os.makedirs(output_dir, exist_ok=True)
+                    epoch = samples.get("epoch", 0)
+                    it = samples.get("iters", 0)
 
-                        # LiDAR map
-                        if "lid_discrepancy_map" in features:
-                            lid_map = features["lid_discrepancy_map"]
-                            fname = os.path.abspath(os.path.join(output_dir, "lidar_discrepancy_map.png"))
-                            plt.imsave(fname, lid_map[0].cpu().numpy())
-                            print(f"[INFO] Saved LiDAR heatmap to: {fname}")
+                    # -------------------------------------------------------
+                    # SAVE INPUT BEV FEATURES (for benign/attack comparison)
+                    # -------------------------------------------------------
+                    if "cam_bev" in samples:
+                        cam_input = samples["cam_bev"][0].cpu().numpy()   # [C,H,W]
+                        print("cam_input shape", cam_input.shape)
+                        cam_in_path = os.path.join(
+                            result_dir, f"cam_input_e{epoch}_i{it}.npy"
+                        )
+                        np.save(cam_in_path, cam_input)
+                        print(f"[INFO] Saved Camera INPUT BEV → {cam_in_path}")
 
-                        # Camera map
-                        if "cam_discrepancy_map" in features:
-                            cam_map = features["cam_discrepancy_map"]
-                            fname = os.path.abspath(os.path.join(output_dir, "camera_discrepancy_map.png"))
-                            plt.imsave(fname, cam_map[0].cpu().numpy())
-                            print(f"[INFO] Saved Camera heatmap to: {fname}")
+                    if "lidar_bev" in samples:
+                        lid_input = samples["lidar_bev"][0].cpu().numpy()  # [C,H,W]
+                        print("lid_input shape", lid_input.shape)
+                        lid_in_path = os.path.join(
+                            result_dir, f"lidar_input_e{epoch}_i{it}.npy"
+                        )
+                        np.save(lid_in_path, lid_input)
+                        print(f"[INFO] Saved LiDAR INPUT BEV → {lid_in_path}")
 
-                        return {"loss": None, "output": {
-                            "rgb_feats": rgb_feats,
-                            "lidar_feats": lidar_feats,
-                            "lid_discrepancy_map": features.get("lid_discrepancy_map", None),
-                            "cam_discrepancy_map": features.get("cam_discrepancy_map", None),
-                        }}
+                   
+                    # # Save LiDAR discrepancy map --> saving images 
+                    # if "lid_discrepancy_map" in preds:
+                    #     lid_map = preds["lid_discrepancy_map"][0].cpu().numpy()
+                    #     lid_path = os.path.join(result_dir, f"lidar_discrepancy_e{epoch}_i{it}.png")
+                    #     plt.imsave(lid_path, lid_map)
+                    #     print(f"[INFO] Saved LiDAR discrepancy map → {lid_path}")
+
+                    # # Save Camera discrepancy map
+                    # if "cam_discrepancy_map" in preds:
+                    #     cam_map = preds["cam_discrepancy_map"][0].cpu().numpy()
+                    #     cam_path = os.path.join(result_dir, f"camera_discrepancy_e{epoch}_i{it}.png")
+                    #     plt.imsave(cam_path, cam_map)
+                    #     print(f"[INFO] Saved Camera discrepancy map → {cam_path}")
+
+
+
+                    # # Save LiDAR discrepancy map (as numeric values)
+                    # if "lid_discrepancy_map" in preds:
+                    #     lid_map = preds["lid_discrepancy_map"][0].cpu().numpy()
+                    #     lid_path = os.path.join(result_dir, f"lidar_discrepancy_e{epoch}_i{it}.npy")
+                    #     np.save(lid_path, lid_map)
+                    #     print(f"[INFO] Saved LiDAR discrepancy VALUES → {lid_path}")
+
+                    # # Save Camera discrepancy map (as numeric values)
+                    # if "cam_discrepancy_map" in preds:
+                    #     cam_map = preds["cam_discrepancy_map"][0].cpu().numpy()
+                    #     cam_path = os.path.join(result_dir, f"camera_discrepancy_e{epoch}_i{it}.npy")
+                    #     np.save(cam_path, cam_map)
+                    #     print(f"[INFO] Saved Camera discrepancy VALUES → {cam_path}")
+
+
+                    if "cam_rec" in preds:
+                        np.save(os.path.join(result_dir, f"cam_rec_e{epoch}_i{it}.npy"),
+                                preds["cam_rec"][0].cpu().numpy())
+
+                    if "lid_rec" in preds:
+                        np.save(os.path.join(result_dir, f"lid_rec_e{epoch}_i{it}.npy"),
+                                preds["lid_rec"][0].cpu().numpy())
+
+
+                    # -------------------------------------------------------
+                    # RETURN VALIDATION METRICS
+                    # -------------------------------------------------------
+                    # lid_map = preds["lid_discrepancy_map"][0].cpu().numpy()
+                    # cam_map = preds["cam_discrepancy_map"][0].cpu().numpy()
+                    return {
+                        "loss": preds["loss_cam"].item() + preds["loss_lid"].item(),
+                        "loss_cam": preds["loss_cam"].item(),
+                        "loss_lid": preds["loss_lid"].item(),
+                        # "cam_tokens": preds["cam_tokens"],
+                        # "lid_tokens": preds["lid_tokens"],
+                        # "cam_discrepancy_map": preds.get("cam_discrepancy_map", None),
+                        # "lid_discrepancy_map": preds.get("lid_discrepancy_map", None),
+                    }
                 else:
                     output = model(samples)
-                    print("output keys:", output.keys())
+                    print("validation output keys:", output.keys())
                     return {k: (v.mean().item() if hasattr(v, "mean") else v.item()) for k, v in output.items()}
                 
 
-# ================================================================
-# Evaluation 
-# ================================================================
 
-    def compute_retrieval_metrics_from_outputs(self, output_list, top_k=(1, 5, 10)):
-            rgb_feats_list = []
-            lidar_feats_list = []
-            cos_sim_list = []
-            attack_flag_list = []
-            for out in output_list:
-                inner_output = out["output"]
-                rgb_feats_list.append(inner_output["rgb_feats"])
-                lidar_feats_list.append(inner_output["lidar_feats"])
-                cos_sim_list.append(inner_output["cos_sim_diag"].cpu())
-                attack_flag_list.append(inner_output["attack_flags"].cpu())
-
-            rgb_feats = torch.cat(rgb_feats_list, dim=0)      # [B_total, N, D]
-            lidar_feats = torch.cat(lidar_feats_list, dim=0)  # [B_total, N, D]
-
-            rgb_flat = rgb_feats.mean(dim=1)      # [B_total, D]
-            lidar_flat = lidar_feats.mean(dim=1)  # [B_total, D]
-
-            sim_matrix = torch.matmul(rgb_flat, lidar_flat.T)  # [B, B]
-
-            metrics = {}
-            
-            cos_sim_tensor = torch.cat(cos_sim_list, dim=0)        # [B_total]
-            attack_flags_tensor = torch.cat(attack_flag_list, dim=0)  # [B_total]
-
-            cos_sim = cos_sim_tensor.numpy()
-            labels = attack_flags_tensor.numpy().astype(int)
-            scores = 1 - cos_sim
-
-            precision, recall, _ = precision_recall_curve(labels, scores)
-            pr_auc = auc(recall, precision)
-
-            print(f"[EVAL] Precision-Recall AUC: {pr_auc:.4f}")
-            metrics["pr_auc_cos_sim"] = pr_auc
-                        
-            plt.figure()
-            plt.plot(recall, precision, label=f"PR AUC = {pr_auc:.3f}")
-            plt.xlabel("Recall")
-            plt.ylabel("Precision")
-            plt.title("Precision-Recall Curve (Cosine Similarity)")
-            plt.legend()
-            plt.grid(True)
-
-            save_path = "./result/pr_curve_cos_sim.png"
-            plt.savefig(save_path)
-            print(f"[INFO] Saved PR curve to {save_path}")
-
-
-
-
-
-            B = sim_matrix.size(0)
-
-            # === Image-to-LiDAR ===
-            for i in range(B):
-                row = sim_matrix[i]
-                topk_indices = torch.topk(row, k=max(top_k)).indices.tolist()
-                rank_of_gt = (torch.argsort(row, descending=True) == i).nonzero(as_tuple=True)[0].item() + 1
-
-            for k in top_k:
-                hits = sum([i in torch.topk(sim_matrix[i], k=k).indices for i in range(B)])
-                metrics[f"recall@{k}_rgb2lidar"] = hits / B
-
-            ranks = [(torch.argsort(sim_matrix[i], descending=True) == i).nonzero(as_tuple=True)[0].item() + 1 for i in range(B)]
-            metrics["mrr_rgb2lidar"] = sum(1.0 / rank for rank in ranks) / B
-
-            # === LiDAR-to-Image ===
-            sim_matrix_T = sim_matrix.T
-            for i in range(B):
-                row = sim_matrix_T[i]
-                topk_indices = torch.topk(row, k=max(top_k)).indices.tolist()
-                rank_of_gt = (torch.argsort(row, descending=True) == i).nonzero(as_tuple=True)[0].item() + 1
-
-            for k in top_k:
-                hits = sum([i in torch.topk(sim_matrix_T[i], k=k).indices for i in range(B)])
-                metrics[f"recall@{k}_lidar2rgb"] = hits / B
-
-            ranks = [(torch.argsort(sim_matrix_T[i], descending=True) == i).nonzero(as_tuple=True)[0].item() + 1 for i in range(B)]
-            metrics["mrr_lidar2rgb"] = sum(1.0 / rank for rank in ranks) / B
-
-            # === Contrastive loss (debug)
-            temperature = 0.1
-            sim_matrix = sim_matrix / temperature
-            targets = torch.arange(B).to(sim_matrix.device)
-
-            loss_i2t = torch.nn.functional.cross_entropy(sim_matrix, targets)
-            loss_t2i = torch.nn.functional.cross_entropy(sim_matrix.T, targets)
-
-            contrastive_loss = (loss_i2t + loss_t2i) / 2
-            print(f"\n[DEBUG] loss_i2t: {loss_i2t}")
-            print(f"\n[DEBUG] loss_t2i: {loss_t2i}")
-
-
-
-            print(f"\n[DEBUG] contrastive_loss: {contrastive_loss.item():.4f}")
-            metrics["contrastive_loss"] = contrastive_loss.item()
-            return metrics
-
-
-
-    def compute_batchwise_match_confidence_avg_by_batch(
-        self,
-        output_list,
-        threshold: float = 0.5,
-        use_model_temperature: bool = True,
-        fixed_temperature: float = 0.1,):
-        """
-        Computes match accuracy/precision/recall/F1/confidence *per batch*, then averages the batch-level stats.
-        Similar to compute_batchwise_retrieval_metrics, but for match classification.
-        """
-
-        print("\n[INFO] Starting batchwise-averaged confidence evaluation...")
-        base_model = getattr(self, "model", None)
-        if base_model is not None and hasattr(base_model, "module"):
-            base_model = base_model.module
-
-        batch_metrics = []
-        total_samples = 0
-
-        for bidx, out in enumerate(output_list):
-            print(f"\n[INFO] Processing batch {bidx}...")
-
-            # ---- Similarity ----
-            # if "diagnostics" in out["output"] and "similarity" in out["output"]["diagnostics"]:
-            #     sim_raw = out["output"]["diagnostics"]["similarity"]["matrix"]
-            #     print("[DEBUG] Using provided similarity matrix.")
-            # else:
-            print("[DEBUG] Computing similarity from features.")
-            rgb_feats = out["output"]["rgb_feats"]
-            lidar_feats = out["output"]["lidar_feats"]
-            rgb_avg = rgb_feats.mean(dim=1)
-            lidar_avg = lidar_feats.mean(dim=1)
-            sim_raw = rgb_avg @ lidar_avg.T
-
-            B = sim_raw.size(0)
-            targets = torch.arange(B, device=sim_raw.device)
-            total_samples += B
-
-            # ---- Logits ----
-            if use_model_temperature and (base_model is not None) and hasattr(base_model, "log_temp"):
-                logits = sim_raw * torch.exp(base_model.log_temp)
-                print(f"[DEBUG] Using model log_temp = {base_model.log_temp.item():.4f}")
-            else:
-                logits = sim_raw / fixed_temperature
-                print(f"[DEBUG] Using fixed temperature = {fixed_temperature}")
-
-            # ---- Softmax Probs ----
-            probs_row = F.softmax(logits, dim=1)
-            diag_prob_row = probs_row[torch.arange(B), targets]
-
-            probs_col = F.softmax(logits.T, dim=1)
-            diag_prob_col = probs_col[torch.arange(B), targets]
-
-            pred_row = (diag_prob_row > threshold).int()
-            pred_col = (diag_prob_col > threshold).int()
-            gt = torch.ones_like(pred_row)
-
-            # ---- Stats per direction ----
-            acc_r2l, prec_r2l, rec_r2l, f1_r2l, *_ = _bin_stats(pred_row, gt)
-            acc_l2r, prec_l2r, rec_l2r, f1_l2r, *_ = _bin_stats(pred_col, gt)
-
-            batch_metrics.append({
-                "acc_r2l": acc_r2l,
-                "prec_r2l": prec_r2l,
-                "rec_r2l": rec_r2l,
-                "f1_r2l": f1_r2l,
-                "conf_r2l": diag_prob_row.mean().item(),
-                "conf_r2l_std": diag_prob_row.std().item(),
-
-                "acc_l2r": acc_l2r,
-                "prec_l2r": prec_l2r,
-                "rec_l2r": rec_l2r,
-                "f1_l2r": f1_l2r,
-                "conf_l2r": diag_prob_col.mean().item(),
-                "conf_l2r_std": diag_prob_col.std().item(),
-
-                "samples": B,
-            })
-
-            print(f"[Batch {bidx}] RGB→LiDAR acc={acc_r2l:.4f}, conf_avg={diag_prob_row.mean().item():.4f}")
-            print(f"[Batch {bidx}] LiDAR→RGB acc={acc_l2r:.4f}, conf_avg={diag_prob_col.mean().item():.4f}")
-
-        # ---- Average all batch stats ----
-        avg = lambda key: sum(d[key] for d in batch_metrics) / len(batch_metrics)
-        metrics = {
-            "match_thr": threshold,
-            "rgb2lidar_match_acc_batch": avg("acc_r2l"),
-            "rgb2lidar_match_prec_batch": avg("prec_r2l"),
-            "rgb2lidar_match_rec_batch": avg("rec_r2l"),
-            "rgb2lidar_match_f1_batch": avg("f1_r2l"),
-            "rgb2lidar_conf_avg_batch": avg("conf_r2l"),
-            "rgb2lidar_conf_std_batch": avg("conf_r2l_std"),
-
-            "lidar2rgb_match_acc_batch": avg("acc_l2r"),
-            "lidar2rgb_match_prec_batch": avg("prec_l2r"),
-            "lidar2rgb_match_rec_batch": avg("rec_l2r"),
-            "lidar2rgb_match_f1_batch": avg("f1_l2r"),
-            "lidar2rgb_conf_avg_batch": avg("conf_l2r"),
-            "lidar2rgb_conf_std_batch": avg("conf_l2r_std"),
-
-            "num_batches_eval": len(batch_metrics),
-            "num_samples_eval": total_samples,
-        }
-
-        print(f"\n[INFO] Batch-averaged confidence evaluation complete over {total_samples} samples.")
-        print(f"[INFO] Mean RGB→LiDAR acc: {metrics['rgb2lidar_match_acc_batch']:.4f}")
-        print(f"[INFO] Mean LiDAR→RGB acc: {metrics['lidar2rgb_match_acc_batch']:.4f}")
-
-        return metrics
-
-
+    # ================================================================
+    # Evaluation 
+    # ================================================================
 
     @torch.no_grad()
     
@@ -826,31 +630,49 @@ class RunnerBaseW:
         all_losses = []
         all_lid = []
         all_cam = []
-        all_outputs = []
+        all_outputs = []   
 
         retrieval_eval = getattr(config.run_cfg, "retrieval_eval", False)
 
         print(f"[DEBUG] Dataset size: {len(data_loader.dataset)}")
 
         for i, samples in enumerate(data_loader):
-            if i % print_freq == 0:
-                print(f"[DEBUG] {header} [{i}/{len(data_loader)}]")
+            # if i % print_freq == 0:
+            #     print(f"[DEBUG] {header} [{i}/{len(data_loader)}]")
 
             samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
             eval_output = self.valid_step(config, model=model, samples=samples)
             if retrieval_eval:
                 all_outputs.append(eval_output)
             else:
-                # --- NEW: Gather all losses, not just the main one ---
+                print("____________________________________________________")
+                print(eval_output.keys())
+                print(eval_output['loss'])
+                # --- Gather all losses, not just the main one ---
                 loss = eval_output.get("loss", None)
                 if loss is not None:
+                    print("loss exist")
                     all_losses.append(loss)
-                # Try to get the cross losses as well
-                if "L_cross_lid" in eval_output:
-                    all_lid.append(eval_output["L_cross_lid"])
-                if "L_cross_cam" in eval_output:
-                    all_cam.append(eval_output["L_cross_cam"])
+                else:
+                    raise KeyError("Expected key 'loss' in eval_output, but it was NOT found. Got keys: "
+                   f"{list(eval_output.keys())}")
+                # Try to get the losses of each sensor as well
+                
+                if "loss_lid" in eval_output:
+                    all_lid.append(eval_output["loss_lid"])
+                else:
+                    raise KeyError("Expected key 'loss_lid' in eval_output, but it was NOT found. Got keys: "
+                   f"{list(eval_output.keys())}")
+                
+                if "loss_cam" in eval_output:
+                    all_cam.append(eval_output["loss_cam"])
+                else:
+                    raise KeyError("Expected key 'loss_cam' in eval_output, but it was NOT found. Got keys: "
+                                f"{list(eval_output.keys())}")
+
                 all_outputs.append(eval_output)
+
+
 
         print(f"[DEBUG] Completed batches: {len(all_losses)}")
 
@@ -860,31 +682,31 @@ class RunnerBaseW:
             }
         else:
             avg_loss = np.mean(all_losses) if all_losses else 0.0
-            avg_lid = np.mean(all_lid) if all_lid else 0.0
-            avg_cam = np.mean(all_cam) if all_cam else 0.0
+            avg_lid  = np.mean(all_lid) if all_lid else 0.0
+            avg_cam  = np.mean(all_cam) if all_cam else 0.0
+
             return {
-                "loss": avg_loss,
-                "L_cross_lid": avg_lid,
-                "L_cross_cam": avg_cam,
+                "loss": float(f"{avg_loss:.6f}"),
+                "loss_lid": float(f"{avg_lid:.6f}"),
+                "loss_cam": float(f"{avg_cam:.6f}"),
             }
 
 
 
+
+
     def after_evaluation(self, config, val_result, split_name, epoch):
-        # print("------------------------------------------------------------------------------------------------------------------------------")
-        # print("VAL_RESULT DICT:", val_result['output'])
         """
         Process the results after evaluation.
 
         Args:
-            val_result (dict): a dict containing evaluation outputs (e.g., losses, metrics, retrieval stats).
+            val_result (dict): evaluation outputs (losses, extra metrics).
             split_name (str): name of the split evaluated.
             epoch (int or str): epoch number or "best".
 
         Returns:
-            dict: stats to log (should contain "loss" key at least, or retrieval metrics).
+            dict: final stats to log.
         """
-        # print("[AFTER_EVAL] Received val_result:", val_result)
 
         stats = {
             "epoch": epoch,
@@ -892,62 +714,61 @@ class RunnerBaseW:
         }
 
         if isinstance(val_result, dict):
-            # Log loss if available
+
+            # Add main loss if present
             if "loss" in val_result:
                 stats["loss"] = val_result["loss"]
 
-            # Log general metrics if present
-            if "metrics" in val_result:
-                stats.update(val_result["metrics"])
-
-            # If retrieval evaluation results were added
-            # if "output" in val_result and config.run_cfg.get("retrieval_eval", False):
-                # retrieval_metrics = self.compute_retrieval_metrics_from_outputs(val_result["output"])  # for all samples 
-                # retrieval_metrics = self.compute_batchwise_retrieval_metrics( # for bath by batch, then average batches 
-                #     val_result["output"],
-                #     top_k=(1, 5, 10),
-                #     use_model_temperature=True,   # same as training
-                #     fixed_temperature=0.1
-                # )
-
-                # retrieval_metrics = self.compute_batchwise_match_confidence_avg_by_batch(
-                #     output_list=val_result["output"],
-                #     threshold=0.5,
-                #     use_model_temperature=True,
-                #     fixed_temperature=0.1,
-                #     )
-                stats.update(retrieval_metrics)
-
-            if "retrieval" in val_result:
-                retrieval_metrics = val_result["retrieval"]
-                stats.update(retrieval_metrics)
-
-
+            # Add any remaining fields except known groups
             for k, v in val_result.items():
-                if k not in stats and k not in ["metrics", "output", "retrieval"]:
+                if k not in stats:
                     stats[k] = v
+
         print("[AFTER_EVAL] Returning stats:", stats)
         return stats
 
 
-def _bin_stats(preds, gts):
-    # print("------------------------------------------------------------------------------------------------------------------------------")
-    """preds, gts: 1D tensors of 0/1."""
-    tp = ((preds == 1) & (gts == 1)).sum().item()
-    fp = ((preds == 1) & (gts == 0)).sum().item()
-    fn = ((preds == 0) & (gts == 1)).sum().item()
-    tn = ((preds == 0) & (gts == 0)).sum().item()
 
-    acc = (tp + tn) / max(tp + tn + fp + fn, 1)
-    prec = tp / max(tp + fp, 1)
-    rec = tp / max(tp + fn, 1)
-    f1 = 2 * prec * rec / max(prec + rec, 1e-8)
+    # def after_evaluation(self, config, val_result, split_name, epoch):
+    #     # print("------------------------------------------------------------------------------------------------------------------------------")
+    #     # print("VAL_RESULT DICT:", val_result['output'])
+    #     """
+    #     Process the results after evaluation.
 
-    print(f"[STATS] TP={tp}, FP={fp}, FN={fn}, TN={tn}")
-    print(f"[STATS] Accuracy={acc:.4f}, Precision={prec:.4f}, Recall={rec:.4f}, F1={f1:.4f}")
+    #     Args:
+    #         val_result (dict): a dict containing evaluation outputs (e.g., losses, metrics, retrieval stats).
+    #         split_name (str): name of the split evaluated.
+    #         epoch (int or str): epoch number or "best".
 
-    return acc, prec, rec, f1, tp, fp, fn, tn
+    #     Returns:
+    #         dict: stats to log (should contain "loss" key at least, or retrieval metrics).
+    #     """
+    #     # print("[AFTER_EVAL] Received val_result:", val_result)
 
+    #     stats = {
+    #         "epoch": epoch,
+    #         "split": split_name,
+    #     }
+
+    #     if isinstance(val_result, dict):
+    #         # Log loss if available
+    #         if "loss" in val_result:
+    #             stats["loss"] = val_result["loss"]
+
+    #         # Log general metrics if present
+    #         if "metrics" in val_result:
+    #             stats.update(val_result["metrics"])
+
+    #         if "retrieval" in val_result:
+    #             retrieval_metrics = val_result["retrieval"]
+    #             stats.update(retrieval_metrics)
+
+
+    #         for k, v in val_result.items():
+    #             if k not in stats and k not in ["metrics", "output", "retrieval"]:
+    #                 stats[k] = v
+    #     print("[AFTER_EVAL] Returning stats:", stats)
+    #     return stats
 
 
 
